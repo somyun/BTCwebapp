@@ -1,0 +1,9 @@
+{
+    "name": "ERP 점검 웹앱",
+    "short_name": "ERP웹앱",
+    "background_color": "#ffffff",
+    "theme_color": "#ffffff",
+    "display": "standalone",
+    "start_url": "./index.html",
+    "gcm_sender_id": "103953800507"
+}
