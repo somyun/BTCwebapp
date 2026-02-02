@@ -129,6 +129,7 @@ window.onload = function () {
     initializeFavorites();
     updateHomeButtonVisibility();
     addHomeStateToHistory();
+    checkIosPwaStatus();
 
     window.addEventListener('popstate', function (event) {
         // 뒤로가기 시 홈 화면으로 복귀
@@ -396,6 +397,34 @@ function showStatus(message, type, duration = 0) {
             statusDiv.style.opacity = '0';
             setTimeout(() => { statusDiv.style.display = 'none'; }, 300);
         }, duration);
+    }
+}
+
+// --- iOS PWA Install Guide Logic ---
+function checkIosPwaStatus() {
+    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+
+    if (isIos && !isStandalone) {
+        // 아이폰인데 홈 화면 추가가 안 된 경우 (사파리로 접속 중)
+        const guide = document.getElementById('iosInstallGuide');
+        if (guide) {
+            // 이전에 '확인'을 누른 적이 있는지 체크 (하루 동안 보이지 않게 처리 가능)
+            const guideHiddenUntil = localStorage.getItem('iosGuideHiddenUntil');
+            if (!guideHiddenUntil || new Date().getTime() > parseInt(guideHiddenUntil)) {
+                guide.classList.add('visible');
+            }
+        }
+    }
+}
+
+function closeIosSettingsGuide() {
+    const guide = document.getElementById('iosInstallGuide');
+    if (guide) {
+        guide.classList.remove('visible');
+        // 24시간 동안 보이지 않게 설정
+        const hideUntil = new Date().getTime() + (24 * 60 * 60 * 1000);
+        localStorage.setItem('iosGuideHiddenUntil', hideUntil);
     }
 }
 

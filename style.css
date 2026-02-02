@@ -728,3 +728,86 @@ input:checked+.slider:before {
   background-color: #4CAF50;
   color: white;
 }
+
+/* --- iOS Install Guide --- */
+.ios-install-guide {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: white;
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.2);
+  z-index: 3000;
+  padding: 24px;
+  box-sizing: border-box;
+  display: none;
+  /* JS에서 노출 결정 */
+  animation: slideUp 0.5s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+.ios-install-guide.visible {
+  display: block;
+}
+
+.guide-content {
+  position: relative;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.guide-close {
+  position: absolute;
+  top: -10px;
+  right: 0;
+  font-size: 24px;
+  color: #999;
+  cursor: pointer;
+  padding: 5px;
+}
+
+.guide-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 1.2em;
+}
+
+.ios-install-guide p {
+  margin: 0 0 15px 0;
+  color: #333;
+}
+
+.ios-install-guide ol {
+  margin: 0 0 20px 0;
+  padding-left: 20px;
+  line-height: 1.6;
+}
+
+.ios-install-guide li {
+  margin-bottom: 8px;
+}
+
+.guide-confirm-btn {
+  width: 100%;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 12px;
+  border-radius: 10px;
+  font-size: 1.1em;
+  font-weight: bold;
+  cursor: pointer;
+}
