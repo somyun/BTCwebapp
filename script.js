@@ -161,12 +161,27 @@ window.onload = function () {
     if (sideToggle) sideToggle.checked = isNotifActive;
     if (mainToggle) mainToggle.checked = isNotifActive;
 
+    // 토글 비활성화 헬퍼
+    function setToggleDisabled(disabled) {
+        if (sideToggle) {
+            sideToggle.disabled = disabled;
+            sideToggle.style.opacity = disabled ? '0.5' : '1';
+        }
+        if (mainToggle) {
+            mainToggle.disabled = disabled;
+            mainToggle.style.opacity = disabled ? '0.5' : '1';
+        }
+        // 로딩 상태 표시 (옵션)
+        if (disabled) {
+            showStatus('동기화 중...', 'loading');
+        }
+    }
+
     // 공통 핸들러
-    function handleToggleChange(e) {
+    async function handleToggleChange(e) {
         // iOS PWA 체크
         if (checkIosPwaStatusAndShowGuide()) {
             e.target.checked = false; // 토글 원복
-            // 다른 쪽 토글도 원복
             if (sideToggle) sideToggle.checked = false;
             if (mainToggle) mainToggle.checked = false;
             return;
@@ -178,20 +193,24 @@ window.onload = function () {
         if (sideToggle) sideToggle.checked = newState;
         if (mainToggle) mainToggle.checked = newState;
 
+        // 토글 잠금 시작 (중복 조작 방지)
+        setToggleDisabled(true);
+
         if (newState) {
             // ON으로 변경 시 모달 띄우기
+            // 모달이 닫히거나 저장될 때 토글 잠금이 해제되어야 함
             openKeywordModal();
         } else {
             // OFF로 변경 시 알림 비활성화
-            disableNotification();
+            await disableNotification();
+            // 작업 완료 후 잠금 해제
+            setToggleDisabled(false);
+            showStatus('알림이 해제되었습니다.', 'success', 2000);
         }
     }
 
     if (sideToggle) sideToggle.addEventListener('change', handleToggleChange);
     // 메인 토글은 동적으로 생성되므로, 생성 시점에 이벤트 리스너를 달거나 이벤트 위임이 필요함.
-    // 여기서는 document에 위임하거나 생성 로직에서 처리. 
-    // 생성 로직(loadSelectedForm 등)에서 리스너를 달아주는 것이 좋음.
-    // 하지만 간편하게 document 레벨에서 change 이벤트를 잡아서 처리하는게 나을 수 있음 (동적 요소).
     document.addEventListener('change', function (e) {
         if (e.target && e.target.id === 'notificationToggleMain') {
             handleToggleChange(e);
@@ -202,6 +221,9 @@ window.onload = function () {
     document.getElementById('closeKeywordModalBtn').addEventListener('click', closeKeywordModal);
     document.getElementById('saveKeywordBtn').addEventListener('click', handleKeywordSave);
     document.getElementById('keywordModalOverlay').addEventListener('click', closeKeywordModal);
+
+    // 외부에 헬퍼 노출 (모달 닫기/저장 함수에서 접근 가능하도록)
+    window.setToggleDisabled = setToggleDisabled;
 };
 
 // --- Firebase Notification Logic ---
@@ -277,8 +299,10 @@ async function sendTokenToServer(token, keywords = "", isActive = true) {
             // 성공 시 로컬 스토리지도 확실히 갱신
             saveToStorage('isNotificationActive', isActive);
             saveToStorage('userKeywords', keywords);
+            console.log("서버 저장 성공:", response);
         } else {
             showStatus(`서버 저장 실패: ${response.message}`, 'error');
+            console.error("서버 저장 실패:", response);
         }
     } catch (e) {
         console.error(e);
@@ -289,13 +313,32 @@ async function sendTokenToServer(token, keywords = "", isActive = true) {
 async function syncNotificationSettingsWithServer() {
     if (!messaging) return;
 
+    // 초기 로딩 시 토글 잠금 (사이드 이펙트 방지)
+    // 주의: window.onload 안에 있는 지역 변수 sideToggle 등에 접근 불가하므로
+    // DOM에서 직접 가져와야 함.
+    const sideToggle = document.getElementById('notificationToggle');
+    const mainToggle = document.getElementById('notificationToggleMain');
+
+    if (sideToggle) sideToggle.disabled = true;
+    if (mainToggle) mainToggle.disabled = true;
+
     try {
-        // 이미 권한이 있는 경우에만 토큰을 가져와 동기화 시도
-        if (Notification.permission !== 'granted') return;
+        // 권한이 없으면 동기화할 토큰도 없음.
+        if (Notification.permission !== 'granted') {
+            console.log("No notification permission, skipping sync.");
+            if (sideToggle) sideToggle.disabled = false;
+            if (mainToggle) mainToggle.disabled = false;
+            return;
+        }
 
         const token = await messaging.getToken({ vapidKey: VAPID_KEY });
-        if (!token) return;
+        if (!token) {
+            if (sideToggle) sideToggle.disabled = false;
+            if (mainToggle) mainToggle.disabled = false;
+            return;
+        }
 
+        console.log("Fetching settings from server...");
         const response = await callApi('getUserSettings', 'GET', { token: token });
         if (response.success) {
             console.log("Server settings synced:", response);
@@ -303,14 +346,22 @@ async function syncNotificationSettingsWithServer() {
             saveToStorage('userKeywords', response.keywords || "");
             saveToStorage('isNotificationActive', response.isActive);
 
-            const sideToggle = document.getElementById('notificationToggle');
-            const mainToggle = document.getElementById('notificationToggleMain');
-
-            if (sideToggle) sideToggle.checked = response.isActive;
-            if (mainToggle) mainToggle.checked = response.isActive;
+            if (sideToggle) {
+                sideToggle.checked = response.isActive;
+                sideToggle.style.opacity = '1';
+            }
+            if (mainToggle) {
+                mainToggle.checked = response.isActive;
+                mainToggle.style.opacity = '1';
+            }
+        } else {
+            console.warn("Failed to fetch settings:", response);
         }
     } catch (e) {
         console.log("Sync failed (not usually an error if first time):", e);
+    } finally {
+        if (sideToggle) sideToggle.disabled = false;
+        if (mainToggle) mainToggle.disabled = false;
     }
 }
 
@@ -321,6 +372,7 @@ function openKeywordModal() {
     // TODO: 기존 키워드 불러오기 (서버 연동 전엔 로컬스토리지 or 빈값)
     const storedKeywords = getFromStorage('userKeywords') || '';
     document.getElementById('keywordInput').value = storedKeywords;
+    // 참고: 모달이 열려있는 동안은 토글이 잠겨있음 (handleToggleChange에서 설정)
 }
 
 function closeKeywordModal() {
@@ -328,16 +380,20 @@ function closeKeywordModal() {
     document.getElementById('keywordModal').classList.remove('visible');
 
     // 취소 시 토글이 켜져있었다면 끄기 (저장되지 않았으므로)
-    // 단, 이미 활성화된 상태에서 단순히 팝업만 닫는 경우라면 유지해야 함.
-    // 여기서는 단순화를 위해 취소 시 체크박스 상태 확인
-    // 현재는 "ON" 동작 시에만 모달이 뜨므로, 취소하면 OFF로 되돌리는게 자연스러움
-    // 하지만 이미 켜져있는 상태에서 수정하려고 눌렀을때는? (현재 UI엔 수정 버튼이 따로 없음. 토글 껐다 켜야함)
-    // 일단 토글을 끄는 것으로 처리.
+    // 모달을 닫았으므로 토글 잠금 해제도 필요
     const sideToggle = document.getElementById('notificationToggle');
     const mainToggle = document.getElementById('notificationToggleMain');
 
-    if (sideToggle && sideToggle.checked) sideToggle.checked = false;
-    if (mainToggle && mainToggle.checked) mainToggle.checked = false;
+    if (sideToggle) {
+        if (sideToggle.checked) sideToggle.checked = false; // 원복
+        sideToggle.disabled = false; // 해제
+        sideToggle.style.opacity = '1';
+    }
+    if (mainToggle) {
+        if (mainToggle.checked) mainToggle.checked = false; // 원복
+        mainToggle.disabled = false; // 해제
+        mainToggle.style.opacity = '1';
+    }
 }
 
 async function handleKeywordSave() {
@@ -346,12 +402,14 @@ async function handleKeywordSave() {
 
     // 키워드 저장 로직
     showStatus('알림 권한 확인 중...', 'loading');
+
+    // 모달 닫기 (먼저 닫고 로딩 표시)
+    document.getElementById('keywordModalOverlay').classList.remove('visible');
+    document.getElementById('keywordModal').classList.remove('visible');
+
     const token = await requestNotificationPermission();
 
     if (token) {
-        document.getElementById('keywordModalOverlay').classList.remove('visible');
-        document.getElementById('keywordModal').classList.remove('visible');
-
         // 로컬 저장
         saveToStorage('userKeywords', keywords);
         saveToStorage('isNotificationActive', true);
@@ -359,11 +417,22 @@ async function handleKeywordSave() {
         // 서버 전송
         await sendTokenToServer(token, keywords, true);
 
-        // 토글 ON 유지 및 동기화
+        // 토글 ON 유지 및 동기화, 잠금 해제
         const sideToggle = document.getElementById('notificationToggle');
         const mainToggle = document.getElementById('notificationToggleMain');
-        if (sideToggle) sideToggle.checked = true;
-        if (mainToggle) mainToggle.checked = true;
+
+        // 윈도우 스코프의 헬퍼가 있다면 사용, 없으면 직접 (여기선 안전하게 직접)
+        // handleToggleChange에서 잠궜던 것 해제
+        if (sideToggle) {
+            sideToggle.checked = true;
+            sideToggle.disabled = false;
+            sideToggle.style.opacity = '1';
+        }
+        if (mainToggle) {
+            mainToggle.checked = true;
+            mainToggle.disabled = false;
+            mainToggle.style.opacity = '1';
+        }
 
         // 저장 시 사이드바 닫기 (요청사항 3)
         closeMenu();
@@ -372,10 +441,18 @@ async function handleKeywordSave() {
         // 권한 실패 시
         const sideToggle = document.getElementById('notificationToggle');
         const mainToggle = document.getElementById('notificationToggleMain');
-        if (sideToggle) sideToggle.checked = false;
-        if (mainToggle) mainToggle.checked = false;
+        if (sideToggle) {
+            sideToggle.checked = false;
+            sideToggle.disabled = false;
+            sideToggle.style.opacity = '1';
+        }
+        if (mainToggle) {
+            mainToggle.checked = false;
+            mainToggle.disabled = false;
+            mainToggle.style.opacity = '1';
+        }
 
-        closeKeywordModal();
+        showStatus('권한을 얻지 못해 알림을 켤 수 없습니다.', 'error');
     }
 }
 
