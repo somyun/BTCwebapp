@@ -212,7 +212,7 @@ window.onload = function () {
             if (mainToggle) mainToggle.checked = false;
 
             saveToStorage('isNotificationActive', false);
-            showStatus('알림이 해제되었습니다.', 'success', 2000);
+            // showStatus('알림이 해제되었습니다.', 'success', 2000); // 사용자 요청으로 제거
 
             // 백그라운드에서 서버 동기화
             disableNotification();
@@ -296,7 +296,7 @@ async function requestNotificationPermission() {
 }
 
 async function sendTokenToServer(token, keywords = "", isActive = true) {
-    showStatus('서버에 설정을 저장 중입니다...', 'loading');
+    // showStatus('서버에 설정을 저장 중입니다...', 'loading'); // 사용자 요청으로 제거
     try {
         const response = await callApi('registerToken', 'POST', {
             token: token,
@@ -305,7 +305,7 @@ async function sendTokenToServer(token, keywords = "", isActive = true) {
             isActive: isActive
         });
         if (response.success) {
-            showStatus('알림 설정이 저장되었습니다!', 'success', 3000);
+            // showStatus('알림 설정이 저장되었습니다!', 'success', 3000); // 사용자 요청으로 제거
             // 성공 시 로컬 스토리지도 확실히 갱신
             saveToStorage('isNotificationActive', isActive);
             saveToStorage('userKeywords', keywords);
@@ -426,7 +426,7 @@ async function handleKeywordSave() {
     // 메뉴 닫기
     closeMenu();
 
-    showStatus('알림 설정을 저장하고 있습니다...', 'loading');
+    // showStatus('알림 설정을 저장하고 있습니다...', 'loading'); // 사용자 요청으로 제거
 
     // 2. 백그라운드: 권한 요청 및 서버 전송
     try {
