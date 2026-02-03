@@ -198,23 +198,24 @@ window.onload = function () {
 
         const newState = e.target.checked;
 
-        // UI 동기화
-        if (sideToggle) sideToggle.checked = newState;
-        if (mainToggle) mainToggle.checked = newState;
-
-        // 토글 잠금 시작 (중복 조작 방지)
-        setToggleDisabled(true);
-
         if (newState) {
-            // ON으로 변경 시 모달 띄우기
-            // 모달이 닫히거나 저장될 때 토글 잠금이 해제되어야 함
+            // ON으로 변경 시도: 일단 UI를 OFF로 되돌리고 모달을 띄움
+            // (사용자가 모달에서 '저장'을 눌러야 비로소 ON이 됨)
+            e.target.checked = false;
+            if (sideToggle) sideToggle.checked = false;
+            if (mainToggle) mainToggle.checked = false;
+
             openKeywordModal();
         } else {
-            // OFF로 변경 시 알림 비활성화
-            await disableNotification();
-            // 작업 완료 후 잠금 해제
-            setToggleDisabled(false);
+            // OFF로 변경 시: UI 동기화 및 Optimistic UI 적용
+            if (sideToggle) sideToggle.checked = false;
+            if (mainToggle) mainToggle.checked = false;
+
+            saveToStorage('isNotificationActive', false);
             showStatus('알림이 해제되었습니다.', 'success', 2000);
+
+            // 백그라운드에서 서버 동기화
+            disableNotification();
         }
     }
 
@@ -389,85 +390,75 @@ function closeKeywordModal() {
     document.getElementById('keywordModal').classList.remove('visible');
 
     // 취소 시 토글이 켜져있었다면 끄기 (저장되지 않았으므로)
-    // 모달을 닫았으므로 토글 잠금 해제도 필요
+    // 단, 이미 로컬 state가 active라면(원래 켜져있던 상태에서 수정하려다 취소) 유지해야 하지만,
+    // 현재 로직상 ON -> Modal Open 흐름이므로, 
+    // 저장을 안했으면 '취소'로 간주하고 토글을 다시 OFF로 돌리는게 맞음.
+    // (만약 '수정' 기능이 있다면 로직이 달라져야 함. 현재는 Toggle ON -> Modal임)
+
+    // 하지만 "이미 켜져있는 상태"에서 모달을 열 수 있는 경로가 마땅히 없음 (토글을 껐다 켜야 함).
+    // 따라서 취소 = 토글 OFF 원복이 타당함.
+
     const sideToggle = document.getElementById('notificationToggle');
     const mainToggle = document.getElementById('notificationToggleMain');
 
-    if (sideToggle) {
-        if (sideToggle.checked) sideToggle.checked = false; // 원복
-        sideToggle.disabled = false; // 해제
-        sideToggle.style.opacity = '1';
-    }
-    if (mainToggle) {
-        if (mainToggle.checked) mainToggle.checked = false; // 원복
-        mainToggle.disabled = false; // 해제
-        mainToggle.style.opacity = '1';
-    }
+    if (sideToggle) sideToggle.checked = false;
+    if (mainToggle) mainToggle.checked = false;
 }
 
 async function handleKeywordSave() {
     const keywordInput = document.getElementById('keywordInput');
     const keywords = keywordInput.value.trim();
 
-    // 키워드 저장 로직
-    showStatus('알림 권한 확인 중...', 'loading');
+    // 1. Optimistic UI: 즉시 저장 및 UI 반영
+    saveToStorage('userKeywords', keywords);
+    saveToStorage('isNotificationActive', true);
 
-    // 모달 닫기 (먼저 닫고 로딩 표시)
+    // 토글 UI 켜기 (저장 버튼 누른 시점에 켜짐)
+    const sideToggle = document.getElementById('notificationToggle');
+    const mainToggle = document.getElementById('notificationToggleMain');
+    if (sideToggle) sideToggle.checked = true;
+    if (mainToggle) mainToggle.checked = true;
+
+    // 모달 닫기
     document.getElementById('keywordModalOverlay').classList.remove('visible');
     document.getElementById('keywordModal').classList.remove('visible');
 
-    const token = await requestNotificationPermission();
+    // 메뉴 닫기
+    closeMenu();
 
-    if (token) {
-        // 로컬 저장
-        saveToStorage('userKeywords', keywords);
-        saveToStorage('isNotificationActive', true);
+    showStatus('알림 설정을 저장하고 있습니다...', 'loading');
 
-        // 서버 전송
-        await sendTokenToServer(token, keywords, true);
+    // 2. 백그라운드: 권한 요청 및 서버 전송
+    try {
+        const token = await requestNotificationPermission();
 
-        // 토글 ON 유지 및 동기화, 잠금 해제
+        if (token) {
+            // 권한 성공: 서버 전송 (await 하되 UI는 이미 완료됨)
+            // sendTokenToServer 내부에서 showStatus('success')를 호출하여 완료를 알림
+            await sendTokenToServer(token, keywords, true);
+        } else {
+            // 권한 실패/거부: 롤백(Rollback) 수행
+            throw new Error("Token retrieval failed");
+        }
+    } catch (e) {
+        console.error("알림 설정 실패 (롤백):", e);
+
+        // 롤백: 로컬 상태 및 UI 원복
+        saveToStorage('isNotificationActive', false);
+
         const sideToggle = document.getElementById('notificationToggle');
         const mainToggle = document.getElementById('notificationToggleMain');
 
-        // 윈도우 스코프의 헬퍼가 있다면 사용, 없으면 직접 (여기선 안전하게 직접)
-        // handleToggleChange에서 잠궜던 것 해제
-        if (sideToggle) {
-            sideToggle.checked = true;
-            sideToggle.disabled = false;
-            sideToggle.style.opacity = '1';
-        }
-        if (mainToggle) {
-            mainToggle.checked = true;
-            mainToggle.disabled = false;
-            mainToggle.style.opacity = '1';
-        }
+        if (sideToggle) sideToggle.checked = false;
+        if (mainToggle) mainToggle.checked = false;
 
-        // 저장 시 사이드바 닫기 (요청사항 3)
-        closeMenu();
-
-    } else {
-        // 권한 실패 시
-        const sideToggle = document.getElementById('notificationToggle');
-        const mainToggle = document.getElementById('notificationToggleMain');
-        if (sideToggle) {
-            sideToggle.checked = false;
-            sideToggle.disabled = false;
-            sideToggle.style.opacity = '1';
-        }
-        if (mainToggle) {
-            mainToggle.checked = false;
-            mainToggle.disabled = false;
-            mainToggle.style.opacity = '1';
-        }
-
-        showStatus('권한을 얻지 못해 알림을 켤 수 없습니다.', 'error');
+        showStatus('권한을 얻지 못해 알림 설정을 취소했습니다.', 'error');
     }
 }
 
 async function disableNotification() {
-    // 로컬 상태 즉시 반영
-    saveToStorage('isNotificationActive', false);
+    // 키워드 유지: 빈 값("") 대신 기존에 저장된 키워드를 보냄
+    const storedKeywords = getFromStorage('userKeywords') || "";
 
     // 토큰이 있나?
     if (!messaging) return;
@@ -476,7 +467,8 @@ async function disableNotification() {
     try {
         const token = await messaging.getToken({ vapidKey: VAPID_KEY });
         if (token) {
-            await sendTokenToServer(token, "", false);
+            // isActive만 false로 보냄
+            await sendTokenToServer(token, storedKeywords, false);
         }
     } catch (e) {
         console.error("Disable error", e);

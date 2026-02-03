@@ -810,3 +810,8 @@ input:checked+.slider:before {
   font-weight: bold;
   cursor: pointer;
 }
+
+/* Keyword Input Focus Style */
+#keywordInput:focus::placeholder {
+  color: transparent;
+}
