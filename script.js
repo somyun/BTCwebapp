@@ -139,6 +139,15 @@ window.onload = function () {
         updateHomeButtonVisibility();
     });
 
+    // [Issue 3 Fix] 새로고침/닫기 시 변경사항 경고 (beforeunload 복원)
+    window.addEventListener('beforeunload', function (e) {
+        if (isMeasurementDirty) {
+            e.preventDefault();
+            e.returnValue = '입력한 측정값이 저장되지 않았습니다. 정말로 페이지를 이동하시겠습니까?';
+            return e.returnValue;
+        }
+    });
+
     // 앱 시작 시 서비스 워커 등록 및 설정 동기화
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('./firebase-messaging-sw.js')
@@ -974,6 +983,10 @@ async function loadSelectedForm() {
         currentSheetInfo = null;
         document.getElementById('favoritesSection').classList.remove('hidden');
         updateHomeButtonVisibility();
+
+        // [Issue 2 Fix] 홈 복귀 시 dirty flag 초기화
+        isMeasurementDirty = false;
+
         closeMenu();
         return;
     }
@@ -1159,27 +1172,54 @@ function validateInputValue(input) {
 }
 
 function showValidationWarning(input, value, min, max, recentVal, recentDate) {
-    // Original warning modal logic...
-    // Simplified for brevity in this conversion, simply copy pasting pure JS logic
+    // [Issue 1 Fix] DOM 요소 직접 생성 및 연결 방식으로 데드락 방지
     const overlay = document.createElement('div');
     overlay.className = 'validation-modal-overlay';
+    // 오버레이 클릭 시 닫기
+    overlay.onclick = closeModal;
+
     const modal = document.createElement('div');
     modal.className = 'validation-modal-content';
 
-    modal.innerHTML = `<h4>⚠️ 범위 경고</h4><p>입력값이 유효범위를 벗어납니다.</p>
-          <p>${recentDate} 값: ${recentVal || '없음'}<br>현재 값: ${value}</p>
-          <div class="validation-modal-buttons"><button id="vYes" class="primary">수정</button><button id="vNo">무시하기</button></div>`;
+    const recentValueText = recentVal ? recentVal : '없음';
+
+    // 내용 구성 (버튼 제외)
+    modal.innerHTML = `<h4>⚠️ 범위 경고</h4>
+          <p>입력값이 유효범위를 벗어납니다.</p>
+          <p>${recentDate || ''} 값: ${recentValueText}<br>현재 값: ${value}</p>`;
+
+    // 버튼 컨테이너 생성
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'validation-modal-buttons';
+
+    // "수정" 버튼 (값 지우고 포커스)
+    const btnYes = document.createElement('button');
+    btnYes.className = 'primary';
+    btnYes.textContent = '수정';
+    btnYes.onclick = function () {
+        input.value = '';
+        input.focus();
+        closeModal();
+    };
+
+    // "무시하기" 버튼 (값 유지)
+    const btnNo = document.createElement('button');
+    btnNo.textContent = '무시하기';
+    btnNo.onclick = function () {
+        closeModal();
+    };
+
+    btnContainer.appendChild(btnYes);
+    btnContainer.appendChild(btnNo);
+    modal.appendChild(btnContainer);
 
     document.body.appendChild(overlay);
     document.body.appendChild(modal);
 
-    document.getElementById('vYes').onclick = () => {
-        input.value = ''; input.focus();
-        document.body.removeChild(overlay); document.body.removeChild(modal);
-    };
-    document.getElementById('vNo').onclick = () => {
-        document.body.removeChild(overlay); document.body.removeChild(modal);
-    };
+    function closeModal() {
+        if (overlay.parentNode) document.body.removeChild(overlay);
+        if (modal.parentNode) document.body.removeChild(modal);
+    }
 }
 
 // --- 유틸리티 ---
