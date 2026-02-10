@@ -652,8 +652,14 @@ function createDynamicForm(formData, formTitle) {
     if (formTitle) {
         const displayName = currentSheetInfo.displayName || currentSheetInfo.sheetName;
         const fileName = `${displayName}_${fileDateStr || ''}.xlsx`;
-        prepareXlsxInAdvance(null, currentSheetInfo.sheetName, fileName);
-        downloadBtnHtml = `<button id="xlsxDownloadBtn" onclick="triggerPreparedDownload('xlsxDownloadBtn')" disabled style="margin-left:10px; font-size:0.95em; padding: 6px 12px; background-color: #ccc; color: #666; border: none; border-radius: 4px; font-weight: bold; cursor: not-allowed;">파일 준비중.. ${lastDateStr}</button>`;
+        prepareXlsxInAdvance(null, currentSheetInfo.sheetName, fileName, fileDateStr);
+        downloadBtnHtml = `<button id="xlsxDownloadBtn"
+        onclick="triggerPreparedDownload('xlsxDownloadBtn')"
+        disabled
+        style="width: auto; margin-left: 5px; margin-right: 5px; font-size:0.85em; padding: 6px 10px; background-color: #ccc; color: #666;
+              border: none; border-radius: 4px; font-weight: bold; cursor: not-allowed;">
+        파일 준비중..
+      </button>`
     }
 
     // 초기화
@@ -676,19 +682,19 @@ function createDynamicForm(formData, formTitle) {
     const sortBtnHtml = `
         <button id="toggleSortBtn" type="button" onclick="toggleSortMode()" 
             style="margin-left:auto; width:auto; padding: 6px 10px; background:transparent; color:#333; border:1px solid #ccc; font-size:0.9em;">
-            ⇅ 순서변경
+            ⇅ 정렬
         </button>`;
 
     h3.style.display = 'flex';
     h3.style.alignItems = 'center';
-    h3.style.gap = '8px';
-    h3.style.flexWrap = 'wrap'; // 버튼 많아지면 줄바꿈
+    h3.style.gap = '5px';
+    h3.style.flexWrap = 'nowrap'; // 버튼 많아지면 줄바꿈
 
     // 제목 영역 (flex-grow로 공간 차지)
     h3.innerHTML = `
         <span style="margin-right:auto;">${formTitle || '측정값 입력 폼'}</span>
-        ${sortBtnHtml}
         ${downloadBtnHtml}
+        ${sortBtnHtml}
     `;
 
     document.getElementById('favoritesSection').classList.add('hidden');
@@ -787,7 +793,7 @@ function createDynamicForm(formData, formTitle) {
 }
 
 // --- XLSX 다운로드 준비 ---
-async function prepareXlsxInAdvance(fileId, sheetName, fileName) {
+async function prepareXlsxInAdvance(fileId, sheetName, fileName, fileDateStr) {
     // GAS API는 fileId, sheetName, filename을 파라미터로 받아서 Base64를 리턴하도록 되어있음
     try {
         let url = `${GAS_API_URL}?fileId=${encodeURIComponent('ignored')}&sheetName=${encodeURIComponent(sheetName)}&filename=${encodeURIComponent(fileName)}`;
@@ -827,7 +833,7 @@ async function prepareXlsxInAdvance(fileId, sheetName, fileName) {
             btn.style.backgroundColor = '#4CAF50';
             btn.style.color = 'white';
             btn.style.cursor = 'pointer';
-            btn.innerText = `⬇ ${fileName}`;
+            btn.innerText = `⬇ ${fileDateStr} 엑셀`;
         }
     } catch (err) {
         console.error(err);
@@ -881,7 +887,8 @@ async function saveMeasurements() {
             // 다운로드 새로고침
             const displayName = currentSheetInfo.displayName || currentSheetInfo.sheetName;
             const d = new Date();
-            const fileName = `${displayName}_${d.getFullYear().toString().slice(2, 4)}${('0' + (d.getMonth() + 1)).slice(-2)}${('0' + d.getDate()).slice(-2)}.xlsx`;
+            const fileDateStr = `${d.getFullYear().toString().slice(2, 4)}${('0' + (d.getMonth() + 1)).slice(-2)}${('0' + d.getDate()).slice(-2)}`;
+            const fileName = `${displayName}_${fileDateStr}.xlsx`;
 
             const btn = document.getElementById('xlsxDownloadBtn');
             if (btn) {
@@ -889,7 +896,7 @@ async function saveMeasurements() {
                 btn.style.backgroundColor = '#ccc';
                 btn.innerText = '파일 준비중..';
             }
-            prepareXlsxInAdvance(currentSheetInfo.spreadsheetId, currentSheetInfo.sheetName, fileName);
+            prepareXlsxInAdvance(currentSheetInfo.spreadsheetId, currentSheetInfo.sheetName, fileName, fileDateStr);
 
         } else {
             showStatus(response.message || '저장 실패', 'error');
@@ -1295,7 +1302,7 @@ function toggleSortMode() {
         showStatus('핸들(☰)을 드래그하여 순서를 변경하세요.', 'success', 2000);
     } else {
         // 편집 모드 끄기
-        btn.textContent = '⇅ 순서변경';
+        btn.textContent = '⇅ 정렬';
         btn.style.background = 'transparent';
         btn.style.borderColor = '#ccc';
         btn.style.color = '#333';
