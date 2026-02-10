@@ -1291,7 +1291,6 @@ function toggleSortMode() {
 
     if (isSortMode) {
         // 편집 모드 켜기
-        btn.textContent = '✅ 완료';
         btn.style.background = '#e7f3ff';
         btn.style.borderColor = '#2196f3';
         btn.style.color = '#0b69d3';
@@ -1302,8 +1301,7 @@ function toggleSortMode() {
         showStatus('핸들(☰)을 드래그하여 순서를 변경하세요.', 'success', 2000);
     } else {
         // 편집 모드 끄기
-        btn.textContent = '⇅ 정렬';
-        btn.style.background = 'transparent';
+        btn.style.background = '#fff';
         btn.style.borderColor = '#ccc';
         btn.style.color = '#333';
 
