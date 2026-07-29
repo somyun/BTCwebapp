@@ -34,11 +34,61 @@ function loadRuntime(search = '', fetchImpl = async () => {
     return window;
 }
 
-test('production default remains GAS and makes no Firestore request', async () => {
+function firestoreFormListResponse() {
+    const revision = '2026-07-29T00:00:00.000Z';
+    return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+            fields: {
+                schemaVersion: { integerValue: '1' },
+                itemCount: { integerValue: '1' },
+                sourceRevision: { stringValue: revision },
+                items: {
+                    arrayValue: {
+                        values: [{
+                            mapValue: {
+                                fields: {
+                                    formKey: { stringValue: `f_${'a'.repeat(32)}` },
+                                    sheetName: { stringValue: 'FORM_A' },
+                                    displayName: { stringValue: 'FORM_A' },
+                                    lastModifiedDate: { stringValue: revision }
+                                }
+                            }
+                        }]
+                    }
+                }
+            }
+        })
+    };
+}
+
+test('production default serves the form list from Firestore when available', async () => {
+    let gasFetchCount = 0;
+    const window = loadRuntime('', async () => firestoreFormListResponse());
+    const result = await window.BWAProductionRead.loadFormList(async () => {
+        gasFetchCount += 1;
+        return [];
+    });
+
+    assert.equal(result.servedBy, 'firestore');
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0].sheetName, 'FORM_A');
+    assert.equal(result.items[0].displayName, 'FORM_A');
+    assert.equal(gasFetchCount, 0);
+    assert.equal(window.BWA_PRODUCTION_READ_STATE.source, 'firestore');
+    assert.equal(window.BWA_PRODUCTION_READ_STATE.fallbackCount, 0);
+});
+
+test('production default attempts Firestore and falls back to GAS when unavailable', async () => {
     let fetchCount = 0;
     const window = loadRuntime('', async () => {
         fetchCount += 1;
-        throw new Error('UNEXPECTED_FETCH');
+        return {
+            ok: false,
+            status: 503,
+            json: async () => ({})
+        };
     });
     const gasItems = [{
         sheetName: 'FORM_A',
@@ -46,10 +96,11 @@ test('production default remains GAS and makes no Firestore request', async () =
         lastModifiedDate: '2026-07-29T00:00:00.000Z'
     }];
     const result = await window.BWAProductionRead.loadFormList(async () => gasItems);
-    assert.equal(result.servedBy, 'gas');
+    assert.equal(result.servedBy, 'gas-fallback');
     assert.deepEqual(result.items, gasItems);
-    assert.equal(fetchCount, 0);
-    assert.equal(window.BWA_PRODUCTION_READ_STATE.source, 'gas');
+    assert.equal(fetchCount, 1);
+    assert.equal(window.BWA_PRODUCTION_READ_STATE.source, 'firestore');
+    assert.equal(window.BWA_PRODUCTION_READ_STATE.fallbackCount, 1);
 });
 
 test('Firestore mode falls back to GAS when production cache is unavailable', async () => {
@@ -66,14 +117,14 @@ test('Firestore mode falls back to GAS when production cache is unavailable', as
     assert.equal(window.BWA_PRODUCTION_READ_STATE.lastFallback.operation, 'formList');
 });
 
-test('invalid read source cannot bypass the GAS default', async () => {
+test('invalid read source cannot bypass the Firestore default', async () => {
     const window = loadRuntime('?readSource=invalid');
-    assert.equal(window.BWA_PRODUCTION_READ_STATE.source, 'gas');
+    assert.equal(window.BWA_PRODUCTION_READ_STATE.source, 'firestore');
 });
 
 test('hosted production ignores query-string read source overrides', async () => {
-    const window = loadRuntime('?readSource=firestore', undefined, 'somyun.github.io');
-    assert.equal(window.BWA_PRODUCTION_READ_STATE.source, 'gas');
+    const window = loadRuntime('?readSource=gas', undefined, 'somyun.github.io');
+    assert.equal(window.BWA_PRODUCTION_READ_STATE.source, 'firestore');
 });
 
 test('adapter rejects a GAS list from a different spreadsheet', () => {

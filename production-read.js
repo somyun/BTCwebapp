@@ -5,7 +5,7 @@
     if (!adapter) throw new Error('READ_ADAPTER_UNAVAILABLE');
 
     const CONFIG = Object.freeze({
-        defaultSource: 'gas',
+        defaultSource: 'firestore',
         projectId: 'btcwebapp-551bd',
         apiKey: 'AIzaSyD4eSO-idxDepO8knAqLLzxX5ZfNCy9NAM',
         spreadsheetId: '19rgzRnTQtOwwW7Ts5NbBuItNey94dAZsEnO7Tk0cm6s',
