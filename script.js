@@ -953,7 +953,9 @@ async function loadFormList() {
     formListStatus.className = 'loading';
 
     try {
-        const formList = await callApi('getFormList', 'GET');
+        const { items: formList } = await window.BWAProductionRead.loadFormList(
+            () => callApi('getFormList', 'GET')
+        );
         formSelect.innerHTML = '<option value="">-- 양식을 선택해주세요 --</option>';
 
         if (formList && formList.length > 0) {
@@ -961,11 +963,12 @@ async function loadFormList() {
             formList.forEach(form => {
                 const option = document.createElement('option');
                 option.value = form.sheetName;
-                const cleanName = form.sheetName.split('_')[0];
+                const cleanName = (form.displayName || form.sheetName).split('_')[0];
                 option.textContent = `${cleanName} (수정: ${formatDateForDisplay(form.lastModifiedDate)})`;
                 option.dataset.displayName = cleanName;
                 option.dataset.lastModifiedDate = form.lastModifiedDate;
                 option.dataset.spreadsheetId = form.spreadsheetId;
+                if (form.formKey) option.dataset.formKey = form.formKey;
                 formSelect.appendChild(option);
             });
             formSelect.value = originalValue;
@@ -1030,7 +1033,17 @@ async function loadSelectedForm() {
     closeMenu();
 
     try {
-        const formData = await callApi('getFormDataForWeb', 'GET', { sheetName });
+        const { rows: formData } = await window.BWAProductionRead.loadForm(
+            sheetName,
+            {
+                formKey: selectedOption.dataset.formKey || null,
+                sheetName,
+                displayName: selectedOption.dataset.displayName,
+                lastModifiedDate: selectedOption.dataset.lastModifiedDate,
+                spreadsheetId: selectedOption.dataset.spreadsheetId
+            },
+            () => callApi('getFormDataForWeb', 'GET', { sheetName })
+        );
 
         currentSheetInfo = {
             spreadsheetId: selectedOption.dataset.spreadsheetId,

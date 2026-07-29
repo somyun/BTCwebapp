@@ -1,0 +1,27 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // GitHub Pages may read only the published form-list cache.
+    match /publicCache/{documentId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Published forms and their oversized-document chunks are read-only.
+    match /publicForms/{formKey} {
+      allow read: if true;
+      allow write: if false;
+
+      match /chunks/{chunkId} {
+        allow read: if true;
+        allow write: if false;
+      }
+    }
+
+    // Everything else remains private, including future submission data.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

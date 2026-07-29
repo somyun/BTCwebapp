@@ -1,0 +1,20 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "publicCache",
+      "fieldPath": "items",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "publicForms",
+      "fieldPath": "rows",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "chunks",
+      "fieldPath": "rows",
+      "indexes": []
+    }
+  ]
+}
