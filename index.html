@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <title>ERP 점검 웹앱</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=hopo-cad-2">
     <meta name="theme-color" content="#ffffff">
     <link rel="manifest" href="./manifest.json">
     <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
@@ -99,27 +99,51 @@
 
             <section id="mapView" class="map-view view-hidden" aria-label="차량기지 도면 지도">
                 <div id="kakaoMap" class="kakao-map" aria-label="카카오 지도"></div>
+                <canvas id="cadOverlay" class="cad-map-overlay" aria-hidden="true"></canvas>
                 <div id="mapLoading" class="map-loading">지도를 불러오는 중입니다.</div>
 
                 <div class="map-type-controls" aria-label="지도 종류">
-                    <button id="roadmapBtn" class="active" type="button">일반지도</button>
-                    <button id="skyviewBtn" type="button">위성지도</button>
+                    <button id="roadmapBtn" type="button">일반지도</button>
+                    <button id="skyviewBtn" class="active" type="button">위성지도</button>
                     <button id="recenterMapBtn" type="button" title="호포차량기지로 이동">기지로 이동</button>
+                    <button id="currentLocationBtn" type="button" title="현재 위치를 표시하고 이동">현재 위치</button>
                 </div>
+
+                <div id="mapLocationStatus" class="map-location-status" role="status" aria-live="polite"></div>
 
                 <aside class="cad-layer-panel" aria-label="도면 레이어">
                     <div class="cad-layer-heading">
                         <h2>도면 레이어</h2>
-                        <span>준비 중</span>
+                        <span id="cadLayerStatus">불러오는 중</span>
                     </div>
-                    <label class="cad-layer-option disabled">
-                        <input type="checkbox" disabled>
-                        <span>호포차량기지 전차선</span>
+                    <div class="cad-layer-actions" aria-label="레이어 일괄 선택">
+                        <button id="cadCoreLayersBtn" type="button">핵심</button>
+                        <button id="cadAllLayersBtn" type="button">전체</button>
+                        <button id="cadNoLayersBtn" type="button">해제</button>
+                    </div>
+                    <label class="cad-layer-setting">
+                        <span>투명도</span>
+                        <input id="cadOpacity" type="range" min="20" max="100" value="80">
                     </label>
-                    <p>DWG 좌표 분석과 지도 변환이 끝나면 여기에서 도면을 켜고 끌 수 있습니다.</p>
+                    <label class="cad-layer-setting cad-label-setting">
+                        <input id="cadLabelToggle" type="checkbox">
+                        <span>문자도 표시</span>
+                    </label>
+                    <div id="cadLayerList" class="cad-layer-list" aria-label="도면 레이어 목록"></div>
+                    <p id="cadLayerMessage">호포차량기지 도면을 준비하고 있습니다.</p>
                 </aside>
             </section>
         </main>
+    </div>
+
+    <div id="mapAuthOverlay" class="map-auth-overlay" hidden>
+        <section class="map-auth-dialog" role="dialog" aria-modal="true" aria-labelledby="mapAuthTitle">
+            <h2 id="mapAuthTitle">도면 지도 로그인</h2>
+            <p>부산교통공사 이메일 계정으로 인증하면 이 브라우저 또는 PWA에서는 로그인 상태가 유지됩니다.</p>
+            <p id="mapAuthMessage" class="map-auth-message" role="status" aria-live="polite"></p>
+            <button id="mapAuthLoginBtn" type="button">@humetro.busan.kr 계정으로 로그인</button>
+            <button id="mapAuthCancelBtn" class="map-auth-cancel" type="button">취소</button>
+        </section>
     </div>
 
 
@@ -168,12 +192,14 @@
 
     <!-- Firebase SDK (Modular 형태가 아닌 Compat 버전을 사용하여 script 태그 로드) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <script src="read-adapter.js?v=p2-firestore"></script>
     <script src="production-read.js?v=p2-firestore"></script>
-    <script src="map.js?v=kakao-map-1"></script>
-    <script src="script.js?v=p2-firestore"></script>
+    <script src="auth.js?v=humetro-auth-1"></script>
+    <script src="map.js?v=hopo-cad-2"></script>
+    <script src="script.js?v=humetro-auth-1"></script>
 </body>
 
 </html>

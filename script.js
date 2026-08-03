@@ -23,7 +23,7 @@ const VAPID_KEY = "BCIeuJhwW92Usr-QS3BFOUWnP2pZ4rqulcmZBlxXdv8Ayms7zllnqLy-jNj9N
 // Initialize Firebase (Compat)
 let messaging = null;
 try {
-    firebase.initializeApp(firebaseConfig);
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     messaging = firebase.messaging();
     console.log("Firebase initialized.");
 } catch (e) {
@@ -116,8 +116,13 @@ if (overlay) overlay.addEventListener('click', closeMenu);
 const openMapBtn = document.getElementById('openMapBtn');
 if (openMapBtn) openMapBtn.addEventListener('click', openMapView);
 
-function openMapView() {
+async function openMapView() {
     if (isMeasurementDirty && !confirm('변경사항이 저장되지 않았습니다. 지도 화면으로 이동하시겠습니까?')) {
+        return;
+    }
+
+    if (window.BWAAuth && !(await window.BWAAuth.requireMapAccess())) {
+        closeMenu();
         return;
     }
 
