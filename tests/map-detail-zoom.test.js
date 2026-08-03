@@ -64,9 +64,7 @@ async function createHarness() {
         currentLocationBtn: element(),
         displaySettingsBtn: element(),
         detailZoomBtn: element(),
-        rotateMapBtn: element(),
-        mapCompassBtn: element({ hidden: true }),
-        mapCompassNeedle: element(),
+        orientationModeBtn: element(),
         zoomInBtn: element(),
         zoomOutBtn: element(),
         cadLayerPanel: element({ hidden: true }),
@@ -139,7 +137,14 @@ async function createHarness() {
         setTimeout,
         clearTimeout,
         addEventListener() {},
-        navigator: {}
+        navigator: {},
+        innerWidth: 600,
+        innerHeight: 1000,
+        screen: {
+            orientation: {
+                lock: async () => {}
+            }
+        }
     };
     const document = {
         getElementById: (id) => elements[id] || null,
@@ -206,31 +211,25 @@ test('right-side zoom controls enter and leave detail zoom at the tile limit', a
     assert.equal(elements.mapZoomStage.style.transform, '');
 });
 
-test('rotation shows the compass and compass click restores north-up', async () => {
+test('orientation button toggles landscape label mode without rotating the map', async () => {
     const { elements, getMap } = await createHarness();
 
-    elements.rotateMapBtn.listeners.click();
-    assert.match(elements.mapZoomStage.style.transform, /rotate\(90deg\)/);
-    assert.equal(elements.mapCompassBtn.hidden, false);
-    assert.match(elements.mapCompassNeedle.style.transform, /rotate\(90deg\)/);
-    assert.equal(getMap().draggable, false);
-
-    elements.mapCompassBtn.listeners.click();
-    assert.equal(elements.mapZoomStage.style.transform, '');
-    assert.equal(elements.mapCompassBtn.hidden, true);
+    await elements.orientationModeBtn.listeners.click();
+    assert.equal(elements.mapView.classList.contains('landscape-mode'), true);
+    assert.equal(elements.orientationModeBtn['aria-pressed'], 'true');
+    assert.equal(elements.cadOverlay.style['--cad-label-rotation'], '-90deg');
+    assert.doesNotMatch(elements.mapZoomStage.style.transform || '', /rotate/);
     assert.equal(getMap().draggable, true);
+
+    await elements.orientationModeBtn.listeners.click();
+    assert.equal(elements.mapView.classList.contains('landscape-mode'), false);
+    assert.equal(elements.cadOverlay.style['--cad-label-rotation'], '0deg');
 });
 
-test('dragging while rotated changes the Kakao map center', async () => {
-    const { elements, getMap } = await createHarness();
-    elements.rotateMapBtn.listeners.click();
-    const before = getMap().getCenter();
-    const pointer = {
-        pointerType: 'mouse', pointerId: 7, button: 0,
-        clientX: 100, clientY: 100, preventDefault() {}
-    };
-    elements.mapZoomStage.listeners.pointerdown(pointer);
-    elements.mapZoomStage.listeners.pointermove({ ...pointer, clientX: 140 });
-    const after = getMap().getCenter();
-    assert.notDeepEqual({ lat: after.lat, lng: after.lng }, { lat: before.lat, lng: before.lng });
+test('detail zoom applies the inverse scale used to keep labels the same size', async () => {
+    const { elements } = await createHarness();
+    elements.detailZoomBtn.listeners.click();
+    assert.equal(elements.cadOverlay.style['--cad-label-inverse-scale'], '0.5');
+    elements.detailZoomBtn.listeners.click();
+    assert.equal(elements.cadOverlay.style['--cad-label-inverse-scale'], '0.25');
 });
