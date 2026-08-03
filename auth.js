@@ -78,6 +78,10 @@
         } catch (error) {
             if (error?.code === 'auth/popup-closed-by-user') {
                 setMessage('로그인이 취소되었습니다.', true);
+            } else if (error?.code === 'auth/popup-blocked'
+                || error?.code === 'auth/operation-not-supported-in-this-environment') {
+                setMessage('로그인 페이지로 이동합니다.');
+                await auth.signInWithRedirect(provider);
             } else if (error?.code === 'auth/operation-not-allowed') {
                 setMessage('Firebase에서 Google 로그인을 먼저 활성화해야 합니다.', true);
             } else if (error?.code === 'auth/configuration-not-found') {
