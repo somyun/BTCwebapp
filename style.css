@@ -1117,6 +1117,60 @@ input:checked+.slider:before {
   stroke: none;
 }
 
+.map-compass {
+  position: absolute;
+  right: 14px;
+  bottom: 80px;
+  z-index: 10;
+  display: grid;
+  width: 48px;
+  height: 48px;
+  margin: 0;
+  padding: 8px;
+  place-items: center;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.24);
+}
+
+.map-compass[hidden] {
+  display: none;
+}
+
+.map-compass:hover {
+  background: #f8fafc;
+}
+
+.map-compass:active {
+  transform: scale(0.94);
+}
+
+.map-compass svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  fill: none;
+  stroke: #334155;
+  stroke-width: 1.5;
+}
+
+.map-compass .compass-needle {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 120ms linear;
+}
+
+.map-compass .compass-north {
+  fill: #dc2626;
+  stroke: #991b1b;
+}
+
+.map-compass .compass-south {
+  fill: #f8fafc;
+  stroke: #475569;
+}
+
 .map-location-status {
   position: absolute;
   top: 68px;
@@ -1419,6 +1473,11 @@ input:checked+.slider:before {
   .map-current-location {
     right: 10px;
     bottom: 14px;
+  }
+
+  .map-compass {
+    right: 10px;
+    bottom: 72px;
   }
 
   .map-zoom-controls {

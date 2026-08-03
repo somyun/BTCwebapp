@@ -32,6 +32,7 @@
     let pinchFinishTimer = 0;
     let detailScale = 1;
     let detailOffset = { x: 0, y: 0 };
+    let detailRotation = 0;
     let detailPanGesture = null;
     let detailTransitionTimer = 0;
     let detailInteractionLocked = false;
@@ -44,7 +45,35 @@
         return currentMapType === 'skyview' ? 0 : 1;
     }
 
-    function clampDetailOffset(scale = detailScale, offset = detailOffset) {
+    function normalizeRotation(degrees) {
+        let normalized = ((degrees + 180) % 360 + 360) % 360 - 180;
+        if (Math.abs(normalized) < 0.05) normalized = 0;
+        return normalized;
+    }
+
+    function rotationCoverScale() {
+        const view = getElement('mapView');
+        if (!view || !detailRotation) return 1;
+        const radians = Math.abs(detailRotation) * Math.PI / 180;
+        const cosine = Math.abs(Math.cos(radians));
+        const sine = Math.abs(Math.sin(radians));
+        const width = Math.max(1, view.clientWidth);
+        const height = Math.max(1, view.clientHeight);
+        return Math.max(
+            cosine + ((height / width) * sine),
+            cosine + ((width / height) * sine)
+        );
+    }
+
+    function transformedScale() {
+        return Math.max(detailScale, rotationCoverScale());
+    }
+
+    function customTransformActive() {
+        return detailScale > 1.001 || Math.abs(detailRotation) > 0.05;
+    }
+
+    function clampDetailOffset(scale = transformedScale(), offset = detailOffset) {
         const view = getElement('mapView');
         if (!view || scale <= 1) return { x: 0, y: 0 };
         const maxX = ((scale - 1) * view.clientWidth) / 2;
@@ -57,15 +86,27 @@
 
     function updateZoomControls() {
         const detailButton = getElement('detailZoomBtn');
-        const active = detailScale > 1.001;
+        const detailActive = detailScale > 1.001;
         if (detailButton) {
             const displayScale = Number.isInteger(detailScale)
                 ? detailScale.toFixed(0)
                 : detailScale.toFixed(1);
-            detailButton.textContent = active ? `상세 ${displayScale}×` : '상세확대';
-            detailButton.classList.toggle('active', active);
-            detailButton.setAttribute('aria-pressed', String(active));
+            detailButton.textContent = detailActive ? `상세 ${displayScale}×` : '상세확대';
+            detailButton.classList.toggle('active', detailActive);
+            detailButton.setAttribute('aria-pressed', String(detailActive));
         }
+
+        const rotated = Math.abs(detailRotation) > 0.05;
+        const rotateButton = getElement('rotateMapBtn');
+        if (rotateButton) {
+            rotateButton.classList.toggle('active', rotated);
+            rotateButton.setAttribute('aria-pressed', String(rotated));
+            rotateButton.title = rotated ? `현재 회전 ${Math.round(detailRotation)}도` : '15도씩 회전';
+        }
+        const compass = getElement('mapCompassBtn');
+        if (compass) compass.hidden = !rotated;
+        const needle = getElement('mapCompassNeedle');
+        if (needle) needle.style.transform = `rotate(${detailRotation}deg)`;
 
         const zoomInButton = getElement('zoomInBtn');
         const zoomOutButton = getElement('zoomOutBtn');
@@ -77,12 +118,13 @@
         const stage = getElement('mapZoomStage');
         if (!stage) return;
 
+        const scale = transformedScale();
         detailOffset = clampDetailOffset();
-        const active = detailScale > 1.001;
+        const active = customTransformActive();
         stage.classList.toggle('detail-mode', active);
         stage.classList.toggle('detail-transition', animate);
         stage.style.transform = active
-            ? `translate3d(${detailOffset.x}px, ${detailOffset.y}px, 0) scale(${detailScale})`
+            ? `translate3d(${detailOffset.x}px, ${detailOffset.y}px, 0) rotate(${detailRotation}deg) scale(${scale})`
             : '';
 
         window.clearTimeout(detailTransitionTimer);
@@ -126,6 +168,26 @@
 
     function resetDetailZoom(animate = false) {
         setDetailScale(1, null, animate);
+    }
+
+    function setMapRotation(degrees, animate = false) {
+        detailRotation = normalizeRotation(degrees);
+        applyDetailTransform(animate);
+    }
+
+    function rotateMapStep() {
+        setMapRotation(detailRotation + 15, true);
+    }
+
+    function resetMapRotation() {
+        setMapRotation(0, true);
+    }
+
+    function resetViewTransform(animate = false) {
+        detailRotation = 0;
+        detailScale = 1;
+        detailOffset = { x: 0, y: 0 };
+        applyDetailTransform(animate);
     }
 
     function cycleDetailZoom() {
@@ -223,7 +285,7 @@
     function setMapType(type) {
         if (!map) return;
 
-        resetDetailZoom();
+        resetViewTransform();
         currentMapType = type === 'roadmap' ? 'roadmap' : 'skyview';
         map.setMapTypeId(currentMapType === 'skyview'
             ? window.kakao.maps.MapTypeId.SKYVIEW
@@ -238,7 +300,7 @@
     function fitToDepot() {
         if (!map || !manifest) return;
 
-        resetDetailZoom();
+        resetViewTransform();
         const [west, south, east, north] = manifest.bounds_wgs84;
         const bounds = new window.kakao.maps.LatLngBounds();
         bounds.extend(new window.kakao.maps.LatLng(south, west));
@@ -274,7 +336,7 @@
             return;
         }
 
-        resetDetailZoom();
+        resetViewTransform();
         button.disabled = true;
         button.setAttribute('aria-label', '현재 위치 확인 중');
         setLocationStatus('현재 위치 권한을 확인하고 있습니다.', 'loading');
@@ -396,10 +458,14 @@
         };
     }
 
+    function touchAngle(first, second) {
+        return Math.atan2(second.clientY - first.clientY, second.clientX - first.clientX) * 180 / Math.PI;
+    }
+
     function beginPinch(event) {
         if (!canvas) return;
 
-        if (detailScale > 1.001 && event.touches.length === 1) {
+        if (customTransformActive() && event.touches.length === 1) {
             const touch = event.touches[0];
             detailPanGesture = {
                 x: touch.clientX,
@@ -417,12 +483,14 @@
 
         window.clearTimeout(pinchFinishTimer);
         detailPanGesture = null;
-        if (detailScale > 1.001) {
+        if (customTransformActive()) {
             pinchGesture = {
                 mode: 'detail',
                 distance: Math.max(1, touchDistance(first, second)),
                 midpoint,
+                angle: touchAngle(first, second),
                 scale: detailScale,
+                rotation: detailRotation,
                 offset: { ...detailOffset }
             };
             getElement('mapZoomStage')?.classList.add('dragging');
@@ -442,7 +510,7 @@
     }
 
     function updatePinch(event) {
-        if (detailPanGesture && event.touches.length === 1 && detailScale > 1.001) {
+        if (detailPanGesture && event.touches.length === 1 && customTransformActive()) {
             const touch = event.touches[0];
             detailOffset = {
                 x: detailPanGesture.offset.x + touch.clientX - detailPanGesture.x,
@@ -460,6 +528,9 @@
 
         if (pinchGesture.mode === 'detail') {
             detailScale = Math.max(1, Math.min(DETAIL_ZOOM_STEPS[DETAIL_ZOOM_STEPS.length - 1], pinchGesture.scale * distanceRatio));
+            detailRotation = normalizeRotation(
+                pinchGesture.rotation + touchAngle(first, second) - pinchGesture.angle
+            );
             const viewRect = getElement('mapView')?.getBoundingClientRect();
             if (viewRect) {
                 const centerX = viewRect.left + (viewRect.width / 2);
@@ -521,7 +592,7 @@
     }
 
     function beginDetailPointerPan(event) {
-        if (detailScale <= 1.001 || event.pointerType === 'touch' || event.button !== 0) return;
+        if (!customTransformActive() || event.pointerType === 'touch' || event.button !== 0) return;
         const stage = getElement('mapZoomStage');
         detailPanGesture = {
             pointerId: event.pointerId,
@@ -551,8 +622,12 @@
     }
 
     function detailWheelZoom(event) {
-        if (detailScale <= 1.001) return;
+        if (!customTransformActive()) return;
         event.preventDefault();
+        if (event.shiftKey) {
+            setMapRotation(detailRotation + (event.deltaY * 0.05));
+            return;
+        }
         const factor = Math.exp(-event.deltaY * 0.0015);
         setDetailScale(detailScale * factor, { x: event.clientX, y: event.clientY });
     }
@@ -764,6 +839,8 @@
         getElement('recenterMapBtn')?.addEventListener('click', fitToDepot);
         getElement('currentLocationBtn')?.addEventListener('click', showCurrentPosition);
         getElement('detailZoomBtn')?.addEventListener('click', cycleDetailZoom);
+        getElement('rotateMapBtn')?.addEventListener('click', rotateMapStep);
+        getElement('mapCompassBtn')?.addEventListener('click', resetMapRotation);
         getElement('zoomInBtn')?.addEventListener('click', zoomIn);
         getElement('zoomOutBtn')?.addEventListener('click', zoomOut);
         getElement('displaySettingsBtn')?.addEventListener('click', () => {
