@@ -58,9 +58,7 @@ async function createHarness() {
         cadLayerList: element(),
         cadOpacity: element({ value: '80' }),
         cadLabelToggle: element({ checked: false }),
-        roadmapBtn: element(),
-        skyviewBtn: element(),
-        recenterMapBtn: element(),
+        mapTypeToggleBtn: element(),
         currentLocationBtn: element(),
         displaySettingsBtn: element(),
         detailZoomBtn: element(),
@@ -146,8 +144,10 @@ async function createHarness() {
             }
         }
     };
+    const documentListeners = {};
     const document = {
         getElementById: (id) => elements[id] || null,
+        addEventListener: (name, handler) => { documentListeners[name] = handler; },
         querySelectorAll: () => [],
         createElement: () => element(),
         createElementNS: () => element(),
@@ -180,7 +180,7 @@ async function createHarness() {
     const source = fs.readFileSync(path.join(__dirname, '..', 'map.js'), 'utf8');
     vm.runInContext(source, context);
     await window.BWAMap.initialize();
-    return { elements, getMap: () => mapInstance };
+    return { elements, documentListeners, getMap: () => mapInstance };
 }
 
 test('detail button cycles 2x, 4x, 8x and restores normal map interaction', async () => {
@@ -209,6 +209,27 @@ test('right-side zoom controls enter and leave detail zoom at the tile limit', a
     assert.match(elements.mapZoomStage.style.transform, /scale\(2\)/);
     elements.zoomOutBtn.listeners.click();
     assert.equal(elements.mapZoomStage.style.transform, '');
+});
+
+test('one map type button toggles between satellite and roadmap', async () => {
+    const { elements } = await createHarness();
+    assert.equal(elements.mapTypeToggleBtn.textContent, '위성지도');
+    elements.mapTypeToggleBtn.listeners.click();
+    assert.equal(elements.mapTypeToggleBtn.textContent, '일반지도');
+    assert.equal(elements.mapTypeToggleBtn['aria-pressed'], 'false');
+    elements.mapTypeToggleBtn.listeners.click();
+    assert.equal(elements.mapTypeToggleBtn.textContent, '위성지도');
+});
+
+test('an outside pointer closes the layer panel', async () => {
+    const { elements, documentListeners } = await createHarness();
+    elements.cadLayerPanel.contains = () => false;
+    elements.displaySettingsBtn.contains = () => false;
+    elements.displaySettingsBtn.listeners.click();
+    assert.equal(elements.cadLayerPanel.hidden, false);
+    documentListeners.pointerdown({ target: {} });
+    assert.equal(elements.cadLayerPanel.hidden, true);
+    assert.equal(elements.displaySettingsBtn['aria-expanded'], 'false');
 });
 
 test('orientation button toggles landscape label mode without rotating the map', async () => {

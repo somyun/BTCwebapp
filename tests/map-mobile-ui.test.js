@@ -11,6 +11,8 @@ const mapSource = fs.readFileSync(path.join(root, 'map.js'), 'utf8');
 const styles = fs.readFileSync(path.join(root, 'style.css'), 'utf8');
 
 test('map controls expose display settings and an icon-only location button', () => {
+    assert.match(html, /id="mapTypeToggleBtn"[^>]*aria-pressed="true"/);
+    assert.doesNotMatch(html, /id="roadmapBtn"|id="skyviewBtn"|id="recenterMapBtn"/);
     assert.match(html, /id="displaySettingsBtn"[^>]*aria-controls="cadLayerPanel"/);
     assert.match(html, /id="currentLocationBtn"[^>]*class="map-current-location"/);
     assert.match(html, /class="location-dot"/);
@@ -21,6 +23,8 @@ test('display settings button toggles the layer panel accessibly', () => {
     assert.match(mapSource, /panel\.hidden = !willOpen/);
     assert.match(mapSource, /setAttribute\('aria-expanded', String\(willOpen\)\)/);
     assert.match(styles, /\.cad-layer-panel\[hidden\]\s*{\s*display: none;/);
+    assert.match(mapSource, /document\.addEventListener\('pointerdown'/);
+    assert.match(mapSource, /panel\.contains\(event\.target\) \|\| button\.contains\(event\.target\)/);
 });
 
 test('mobile pinch updates the CAD canvas transform during the gesture', () => {
@@ -47,7 +51,9 @@ test('orientation control replaces map rotation and centers on the left in lands
     assert.match(mapSource, /screen\.orientation\.lock\(landscapeMode \? 'landscape' : 'portrait'\)/);
     assert.match(mapSource, /syncOrientationModeFromViewport\(\)/);
     assert.match(styles, /\.map-orientation-button\s*{[\s\S]*?bottom: 22px;[\s\S]*?left: 14px;/);
-    assert.match(styles, /\.map-view\.landscape-mode \.map-orientation-button\s*{[\s\S]*?top: 50%;[\s\S]*?transform: translateY\(-50%\)/);
+    assert.doesNotMatch(styles, /\.map-view\.landscape-mode \.map-orientation-button/);
+    assert.match(styles, /\.map-view\.landscape-mode \.map-type-controls\s*{[\s\S]*?right: auto;[\s\S]*?left: 12px;/);
+    assert.match(styles, /\.map-view\.landscape-mode \.map-zoom-controls\s*{[\s\S]*?right: 12px;/);
 });
 
 test('CAD overlay keeps vector labels upright by mode and constant in detail zoom', () => {
