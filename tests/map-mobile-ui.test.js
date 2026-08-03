@@ -41,10 +41,18 @@ test('detail zoom cycles beyond the Kakao tile limit and keeps controls fixed', 
 });
 
 test('rotation exposes a compass only while the map is rotated', () => {
-    assert.match(html, /id="rotateMapBtn"[^>]*aria-pressed="false"/);
+    assert.match(html, /id="rotateMapBtn"[^>]*class="map-rotate-button"[^>]*aria-pressed="false"/);
     assert.match(html, /id="mapCompassBtn"[^>]*class="map-compass"[^>]*hidden/);
     assert.match(mapSource, /detailRotation = normalizeRotation/);
     assert.match(mapSource, /compass\.hidden = !rotated/);
     assert.match(mapSource, /addEventListener\('click', resetMapRotation\)/);
+    assert.match(styles, /\.map-rotate-button\s*{[\s\S]*?bottom: 22px;[\s\S]*?left: 14px;/);
     assert.match(styles, /\.map-compass\s*{[\s\S]*?bottom: 80px;/);
+});
+
+test('CAD overlay uses SVG vector paths and text for clean detail zoom', () => {
+    assert.match(html, /<svg id="cadOverlay"/);
+    assert.match(mapSource, /createSvgElement\('path'/);
+    assert.match(mapSource, /createSvgElement\('text'/);
+    assert.match(mapSource, /'vector-effect': 'non-scaling-stroke'/);
 });

@@ -82,6 +82,7 @@ async function createHarness() {
             this.level = 4;
             this.draggable = true;
             this.zoomable = true;
+            this.center = new LatLng(35, 129);
         }
         setMapTypeId() {}
         setBounds() {}
@@ -90,6 +91,8 @@ async function createHarness() {
             mapEvents.zoom_changed?.();
         }
         getLevel() { return this.level; }
+        getCenter() { return this.center; }
+        setCenter(center) { this.center = center; mapEvents.center_changed?.(); }
         setDraggable(value) { this.draggable = value; }
         setZoomable(value) { this.zoomable = value; }
         relayout() {}
@@ -98,12 +101,19 @@ async function createHarness() {
                 containerPointFromCoords: (latLng) => ({
                     x: 500 + ((latLng.lng - 129) * 1000),
                     y: 300 - ((latLng.lat - 35) * 1000)
-                })
+                }),
+                coordsFromContainerPoint: (point) => new LatLng(
+                    35 - ((point.y - 300) / 1000),
+                    129 + ((point.x - 500) / 1000)
+                )
             };
         }
     }
     class LatLng {
         constructor(lat, lng) { this.lat = lat; this.lng = lng; }
+    }
+    class Point {
+        constructor(x, y) { this.x = x; this.y = y; }
     }
     class LatLngBounds { extend() {} }
 
@@ -116,6 +126,7 @@ async function createHarness() {
                     constructor(...args) { super(...args); mapInstance = this; }
                 },
                 LatLng,
+                Point,
                 LatLngBounds,
                 MapTypeId: { SKYVIEW: 'skyview', ROADMAP: 'roadmap' },
                 event: {
@@ -134,6 +145,8 @@ async function createHarness() {
         getElementById: (id) => elements[id] || null,
         querySelectorAll: () => [],
         createElement: () => element(),
+        createElementNS: () => element(),
+        createDocumentFragment: () => ({ appendChild() {} }),
         head: element()
     };
     const context = vm.createContext({
@@ -197,13 +210,27 @@ test('rotation shows the compass and compass click restores north-up', async () 
     const { elements, getMap } = await createHarness();
 
     elements.rotateMapBtn.listeners.click();
-    assert.match(elements.mapZoomStage.style.transform, /rotate\(15deg\)/);
+    assert.match(elements.mapZoomStage.style.transform, /rotate\(90deg\)/);
     assert.equal(elements.mapCompassBtn.hidden, false);
-    assert.match(elements.mapCompassNeedle.style.transform, /rotate\(15deg\)/);
+    assert.match(elements.mapCompassNeedle.style.transform, /rotate\(90deg\)/);
     assert.equal(getMap().draggable, false);
 
     elements.mapCompassBtn.listeners.click();
     assert.equal(elements.mapZoomStage.style.transform, '');
     assert.equal(elements.mapCompassBtn.hidden, true);
     assert.equal(getMap().draggable, true);
+});
+
+test('dragging while rotated changes the Kakao map center', async () => {
+    const { elements, getMap } = await createHarness();
+    elements.rotateMapBtn.listeners.click();
+    const before = getMap().getCenter();
+    const pointer = {
+        pointerType: 'mouse', pointerId: 7, button: 0,
+        clientX: 100, clientY: 100, preventDefault() {}
+    };
+    elements.mapZoomStage.listeners.pointerdown(pointer);
+    elements.mapZoomStage.listeners.pointermove({ ...pointer, clientX: 140 });
+    const after = getMap().getCenter();
+    assert.notDeepEqual({ lat: after.lat, lng: after.lng }, { lat: before.lat, lng: before.lng });
 });
