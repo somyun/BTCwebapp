@@ -62,7 +62,6 @@ async function createHarness() {
         currentLocationBtn: element(),
         displaySettingsBtn: element(),
         detailZoomBtn: element(),
-        orientationModeBtn: element(),
         zoomInBtn: element(),
         zoomOutBtn: element(),
         cadLayerPanel: element({ hidden: true }),
@@ -114,6 +113,8 @@ async function createHarness() {
     class LatLngBounds { extend() {} }
 
     let mapInstance;
+    const windowListeners = {};
+    const orientationListeners = {};
     const window = {
         kakao: {
             maps: {
@@ -134,13 +135,14 @@ async function createHarness() {
         requestAnimationFrame: (callback) => { callback(); return 1; },
         setTimeout,
         clearTimeout,
-        addEventListener() {},
+        addEventListener: (name, handler) => { windowListeners[name] = handler; },
         navigator: {},
         innerWidth: 600,
         innerHeight: 1000,
         screen: {
             orientation: {
-                lock: async () => {}
+                angle: 0,
+                addEventListener: (name, handler) => { orientationListeners[name] = handler; }
             }
         }
     };
@@ -180,7 +182,7 @@ async function createHarness() {
     const source = fs.readFileSync(path.join(__dirname, '..', 'map.js'), 'utf8');
     vm.runInContext(source, context);
     await window.BWAMap.initialize();
-    return { elements, documentListeners, getMap: () => mapInstance };
+    return { elements, documentListeners, orientationListeners, window, windowListeners, getMap: () => mapInstance };
 }
 
 test('detail button cycles 2x, 4x, 8x and restores normal map interaction', async () => {
@@ -232,17 +234,25 @@ test('an outside pointer closes the layer panel', async () => {
     assert.equal(elements.displaySettingsBtn['aria-expanded'], 'false');
 });
 
-test('orientation button toggles landscape label mode without rotating the map', async () => {
-    const { elements, getMap } = await createHarness();
+test('device orientation automatically rotates labels in the matching landscape direction', async () => {
+    const { elements, window, windowListeners, getMap } = await createHarness();
 
-    await elements.orientationModeBtn.listeners.click();
+    window.innerWidth = 1000;
+    window.innerHeight = 600;
+    window.screen.orientation.angle = 90;
+    await windowListeners.resize();
     assert.equal(elements.mapView.classList.contains('landscape-mode'), true);
-    assert.equal(elements.orientationModeBtn['aria-pressed'], 'true');
     assert.equal(elements.cadOverlay.style['--cad-label-rotation'], '-90deg');
     assert.doesNotMatch(elements.mapZoomStage.style.transform || '', /rotate/);
     assert.equal(getMap().draggable, true);
 
-    await elements.orientationModeBtn.listeners.click();
+    window.screen.orientation.angle = 270;
+    await windowListeners.resize();
+    assert.equal(elements.cadOverlay.style['--cad-label-rotation'], '90deg');
+
+    window.innerWidth = 600;
+    window.innerHeight = 1000;
+    await windowListeners.resize();
     assert.equal(elements.mapView.classList.contains('landscape-mode'), false);
     assert.equal(elements.cadOverlay.style['--cad-label-rotation'], '0deg');
 });
