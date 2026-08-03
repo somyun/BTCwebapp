@@ -861,3 +861,193 @@ input:checked+.slider:before {
   margin-top: 8px;
   padding-top: 8px;
 }
+
+/* --- Kakao depot map --- */
+.view-hidden {
+  display: none !important;
+}
+
+.map-menu-section {
+  border-top: 1px solid #ddd;
+  padding-top: 18px;
+}
+
+.map-menu-button {
+  margin: 0;
+  background: #276749;
+}
+
+.map-menu-button:hover {
+  background: #22543d;
+}
+
+.home-spacer {
+  height: 144px;
+}
+
+.map-mode {
+  padding: 0;
+  overflow: hidden;
+}
+
+.map-mode .app-container {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: 100dvh;
+  margin: 0;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.map-mode header {
+  z-index: 20;
+}
+
+.map-mode main {
+  height: calc(100dvh - 57px);
+}
+
+.map-view,
+.kakao-map {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.map-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #f5f6f7;
+  color: #334155;
+  font-weight: 700;
+  text-align: center;
+}
+
+.map-loading.hidden {
+  display: none;
+}
+
+.map-loading.error {
+  color: #b42318;
+  background: #fff5f5;
+  border: 0;
+}
+
+.map-type-controls {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 9;
+  display: flex;
+  gap: 0;
+  padding: 4px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.16);
+}
+
+.map-type-controls button {
+  width: auto;
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: 7px;
+  background: transparent;
+  color: #334155;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.map-type-controls button:hover {
+  background: #edf2f7;
+}
+
+.map-type-controls button.active {
+  background: #276749;
+  color: #fff;
+}
+
+.cad-layer-panel {
+  position: absolute;
+  z-index: 9;
+  bottom: 16px;
+  left: 16px;
+  width: min(320px, calc(100% - 32px));
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.18);
+}
+
+.cad-layer-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.cad-layer-heading h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.cad-layer-heading span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #fff3cd;
+  color: #7a4d00;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cad-layer-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 15px;
+}
+
+.cad-layer-option.disabled {
+  color: #64748b;
+}
+
+.cad-layer-panel p {
+  margin: 12px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (max-width: 520px) {
+  .header-title {
+    font-size: 1.35em;
+  }
+
+  .map-type-controls {
+    right: 10px;
+    left: 10px;
+  }
+
+  .map-type-controls button {
+    flex: 1;
+    padding: 9px 7px;
+    font-size: 13px;
+  }
+
+  .cad-layer-panel {
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    width: auto;
+  }
+}
