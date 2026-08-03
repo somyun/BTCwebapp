@@ -64,6 +64,9 @@ async function createHarness() {
         currentLocationBtn: element(),
         displaySettingsBtn: element(),
         detailZoomBtn: element(),
+        rotateMapBtn: element(),
+        mapCompassBtn: element({ hidden: true }),
+        mapCompassNeedle: element(),
         zoomInBtn: element(),
         zoomOutBtn: element(),
         cadLayerPanel: element({ hidden: true }),
@@ -188,4 +191,19 @@ test('right-side zoom controls enter and leave detail zoom at the tile limit', a
     assert.match(elements.mapZoomStage.style.transform, /scale\(2\)/);
     elements.zoomOutBtn.listeners.click();
     assert.equal(elements.mapZoomStage.style.transform, '');
+});
+
+test('rotation shows the compass and compass click restores north-up', async () => {
+    const { elements, getMap } = await createHarness();
+
+    elements.rotateMapBtn.listeners.click();
+    assert.match(elements.mapZoomStage.style.transform, /rotate\(15deg\)/);
+    assert.equal(elements.mapCompassBtn.hidden, false);
+    assert.match(elements.mapCompassNeedle.style.transform, /rotate\(15deg\)/);
+    assert.equal(getMap().draggable, false);
+
+    elements.mapCompassBtn.listeners.click();
+    assert.equal(elements.mapZoomStage.style.transform, '');
+    assert.equal(elements.mapCompassBtn.hidden, true);
+    assert.equal(getMap().draggable, true);
 });

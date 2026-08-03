@@ -39,3 +39,12 @@ test('detail zoom cycles beyond the Kakao tile limit and keeps controls fixed', 
     assert.match(mapSource, /stage\.style\.transform = active/);
     assert.match(styles, /\.map-zoom-controls\s*{[\s\S]*?top: 50%;[\s\S]*?right: 12px;/);
 });
+
+test('rotation exposes a compass only while the map is rotated', () => {
+    assert.match(html, /id="rotateMapBtn"[^>]*aria-pressed="false"/);
+    assert.match(html, /id="mapCompassBtn"[^>]*class="map-compass"[^>]*hidden/);
+    assert.match(mapSource, /detailRotation = normalizeRotation/);
+    assert.match(mapSource, /compass\.hidden = !rotated/);
+    assert.match(mapSource, /addEventListener\('click', resetMapRotation\)/);
+    assert.match(styles, /\.map-compass\s*{[\s\S]*?bottom: 80px;/);
+});
