@@ -15,5 +15,16 @@
     "location": "asia-northeast3",
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
+  },
+  "auth": {
+    "providers": {
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "BTCwebapp",
+        "supportEmail": "bysubway@humetro.busan.kr",
+        "authorizedRedirectUris": [
+          "https://somyun.github.io"
+        ]
+      }
+    }
   }
 }
