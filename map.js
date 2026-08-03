@@ -31,6 +31,7 @@
     let pinchFinishTimer = 0;
     let detailScale = 1;
     let detailOffset = { x: 0, y: 0 };
+    let labelRotationDegrees = 0;
     let detailPanGesture = null;
     let detailTransitionTimer = 0;
     let detailInteractionLocked = false;
@@ -172,18 +173,26 @@
         return -90;
     }
 
+    function updateRenderedLabelRotations() {
+        const labels = canvas?.querySelectorAll?.('.cad-map-label') || [];
+        for (const label of labels) {
+            const x = label.getAttribute('x');
+            const y = label.getAttribute('y');
+            label.setAttribute('transform', `rotate(${labelRotationDegrees} ${x} ${y})`);
+        }
+    }
+
     function syncOrientationFromDevice() {
         const view = getElement('mapView');
         const viewportLandscape = window.innerWidth > window.innerHeight;
         view?.classList.toggle('landscape-mode', viewportLandscape);
+        const nextRotation = detectedLabelRotation(viewportLandscape);
+        const rotationChanged = nextRotation !== labelRotationDegrees;
+        labelRotationDegrees = nextRotation;
         if (canvas) {
-            const labelRotation = `${detectedLabelRotation(viewportLandscape)}deg`;
-            if (canvas.style.setProperty) {
-                canvas.style.setProperty('--cad-label-rotation', labelRotation);
-            } else {
-                canvas.style['--cad-label-rotation'] = labelRotation;
-            }
+            canvas.dataset.labelRotation = String(labelRotationDegrees);
         }
+        if (rotationChanged) updateRenderedLabelRotations();
     }
 
     function panTransformedMap(deltaX, deltaY) {
@@ -727,9 +736,8 @@
                         y,
                         class: 'cad-map-label',
                         fill: color,
-                        'font-size': 11,
                         'font-family': 'Malgun Gothic, sans-serif',
-                        style: `--cad-label-origin: ${x}px ${y}px`
+                        transform: `rotate(${labelRotationDegrees} ${x} ${y})`
                     });
                     text.textContent = label.text;
                     fragment.appendChild(text);

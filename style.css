@@ -960,13 +960,10 @@ input:checked+.slider:before {
   shape-rendering: geometricPrecision;
   text-rendering: geometricPrecision;
   --cad-label-inverse-scale: 1;
-  --cad-label-rotation: 0deg;
 }
 
 .cad-map-label {
-  transform: rotate(var(--cad-label-rotation)) scale(var(--cad-label-inverse-scale));
-  transform-box: view-box;
-  transform-origin: var(--cad-label-origin);
+  font-size: calc(11px * var(--cad-label-inverse-scale));
 }
 
 .cad-map-overlay.zooming {
