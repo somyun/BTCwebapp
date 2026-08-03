@@ -1186,14 +1186,18 @@ input:checked+.slider:before {
   stroke: none;
 }
 
-.map-view.landscape-mode .map-orientation-button {
-  top: 50%;
-  bottom: auto;
-  transform: translateY(-50%);
+.map-view.landscape-mode .map-type-controls {
+  right: auto;
+  left: 12px;
+  flex-wrap: nowrap;
 }
 
-.map-view.landscape-mode .map-orientation-button:active {
-  transform: translateY(-50%) scale(0.94);
+.map-view.landscape-mode .map-type-controls button {
+  flex: none;
+}
+
+.map-view.landscape-mode .map-zoom-controls {
+  right: 12px;
 }
 
 .map-location-status {

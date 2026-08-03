@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <title>ERP 점검 웹앱</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css?v=hopo-cad-7">
+    <link rel="stylesheet" href="style.css?v=hopo-cad-8">
     <meta name="theme-color" content="#ffffff">
     <link rel="manifest" href="./manifest.json">
     <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
@@ -106,9 +106,8 @@
                 <div id="mapLoading" class="map-loading">지도를 불러오는 중입니다.</div>
 
                 <div class="map-type-controls" aria-label="지도 종류">
-                    <button id="roadmapBtn" type="button">일반지도</button>
-                    <button id="skyviewBtn" class="active" type="button">위성지도</button>
-                    <button id="recenterMapBtn" type="button" title="호포차량기지로 이동">기지로 이동</button>
+                    <button id="mapTypeToggleBtn" class="active" type="button" aria-pressed="true"
+                        title="일반지도로 전환">위성지도</button>
                     <button id="displaySettingsBtn" type="button" aria-controls="cadLayerPanel"
                         aria-expanded="false">표시설정</button>
                     <button id="detailZoomBtn" type="button" aria-pressed="false">상세확대</button>
@@ -240,7 +239,7 @@
     <script src="read-adapter.js?v=p2-firestore"></script>
     <script src="production-read.js?v=p2-firestore"></script>
     <script src="auth.js?v=humetro-code-1"></script>
-    <script src="map.js?v=hopo-cad-7"></script>
+    <script src="map.js?v=hopo-cad-8"></script>
     <script src="script.js?v=humetro-code-1"></script>
 </body>
 

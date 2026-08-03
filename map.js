@@ -330,10 +330,20 @@
             ? window.kakao.maps.MapTypeId.SKYVIEW
             : window.kakao.maps.MapTypeId.ROADMAP);
 
-        getElement('roadmapBtn')?.classList.toggle('active', currentMapType === 'roadmap');
-        getElement('skyviewBtn')?.classList.toggle('active', currentMapType === 'skyview');
+        const toggleButton = getElement('mapTypeToggleBtn');
+        if (toggleButton) {
+            const isSkyview = currentMapType === 'skyview';
+            toggleButton.textContent = isSkyview ? '위성지도' : '일반지도';
+            toggleButton.classList.toggle('active', isSkyview);
+            toggleButton.setAttribute('aria-pressed', String(isSkyview));
+            toggleButton.title = isSkyview ? '일반지도로 전환' : '위성지도로 전환';
+        }
         rasterDirty = true;
         renderRaster();
+    }
+
+    function toggleMapType() {
+        setMapType(currentMapType === 'skyview' ? 'roadmap' : 'skyview');
     }
 
     function fitToDepot() {
@@ -864,9 +874,7 @@
 
     function bindControls() {
         if (controlsBound) return;
-        getElement('roadmapBtn')?.addEventListener('click', () => setMapType('roadmap'));
-        getElement('skyviewBtn')?.addEventListener('click', () => setMapType('skyview'));
-        getElement('recenterMapBtn')?.addEventListener('click', fitToDepot);
+        getElement('mapTypeToggleBtn')?.addEventListener('click', toggleMapType);
         getElement('currentLocationBtn')?.addEventListener('click', showCurrentPosition);
         getElement('detailZoomBtn')?.addEventListener('click', cycleDetailZoom);
         getElement('orientationModeBtn')?.addEventListener('click', toggleOrientationMode);
@@ -880,6 +888,15 @@
             panel.hidden = !willOpen;
             button.classList.toggle('active', willOpen);
             button.setAttribute('aria-expanded', String(willOpen));
+        });
+        document.addEventListener('pointerdown', (event) => {
+            const panel = getElement('cadLayerPanel');
+            const button = getElement('displaySettingsBtn');
+            if (!panel || !button || panel.hidden) return;
+            if (panel.contains(event.target) || button.contains(event.target)) return;
+            panel.hidden = true;
+            button.classList.remove('active');
+            button.setAttribute('aria-expanded', 'false');
         });
         getElement('cadCoreLayersBtn')?.addEventListener('click', () => applySelection(
             (layer) => CORE_LAYER_NAMES.has(layer.name)
