@@ -27,6 +27,8 @@
     let renderedLevel = null;
     let currentPositionMarker = null;
     let currentPositionAccuracy = null;
+    let pinchGesture = null;
+    let pinchFinishTimer = 0;
 
     function getElement(id) {
         return document.getElementById(id);
@@ -149,7 +151,7 @@
         }
 
         button.disabled = true;
-        button.textContent = '위치 확인 중…';
+        button.setAttribute('aria-label', '현재 위치 확인 중');
         setLocationStatus('현재 위치 권한을 확인하고 있습니다.', 'loading');
 
         navigator.geolocation.getCurrentPosition((position) => {
@@ -190,11 +192,11 @@
             map.panTo(latLng);
             setLocationStatus(`현재 위치로 이동했습니다. 정확도 약 ${Math.round(accuracy)}m`, 'ready');
             button.disabled = false;
-            button.textContent = '현재 위치';
+            button.setAttribute('aria-label', '현재 위치로 이동');
         }, (error) => {
             setLocationStatus(geolocationErrorMessage(error), 'error');
             button.disabled = false;
-            button.textContent = '현재 위치';
+            button.setAttribute('aria-label', '현재 위치로 이동');
         }, {
             enableHighAccuracy: true,
             timeout: 12000,
@@ -250,11 +252,70 @@
     }
 
     function queuePositionUpdate() {
+        if (canvas?.classList.contains('pinching')) return;
         if (positionFrame) return;
         positionFrame = window.requestAnimationFrame(() => {
             positionFrame = 0;
             updateOverlayPosition();
         });
+    }
+
+    function touchDistance(first, second) {
+        return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
+    }
+
+    function touchMidpoint(first, second) {
+        return {
+            x: (first.clientX + second.clientX) / 2,
+            y: (first.clientY + second.clientY) / 2
+        };
+    }
+
+    function beginPinch(event) {
+        if (!canvas || event.touches.length !== 2) return;
+        const first = event.touches[0];
+        const second = event.touches[1];
+        const midpoint = touchMidpoint(first, second);
+        const canvasRect = canvas.getBoundingClientRect();
+
+        window.clearTimeout(pinchFinishTimer);
+        pinchGesture = {
+            distance: Math.max(1, touchDistance(first, second)),
+            midpoint
+        };
+        canvas.classList.add('pinching');
+        canvas.classList.remove('zooming');
+        canvas.style.transformOrigin = `${midpoint.x - canvasRect.left}px ${midpoint.y - canvasRect.top}px`;
+        canvas.style.transform = 'translate3d(0, 0, 0) scale(1)';
+    }
+
+    function updatePinch(event) {
+        if (!pinchGesture || event.touches.length !== 2 || !canvas) return;
+        const first = event.touches[0];
+        const second = event.touches[1];
+        const midpoint = touchMidpoint(first, second);
+        const scale = Math.max(0.25, Math.min(4, touchDistance(first, second) / pinchGesture.distance));
+        const translateX = midpoint.x - pinchGesture.midpoint.x;
+        const translateY = midpoint.y - pinchGesture.midpoint.y;
+        canvas.style.transform = `translate3d(${translateX}px, ${translateY}px, 0) scale(${scale})`;
+    }
+
+    function clearPinchTransform() {
+        if (!canvas) return;
+        pinchGesture = null;
+        canvas.classList.remove('pinching');
+        canvas.style.transform = '';
+        canvas.style.transformOrigin = '';
+        updateOverlayPosition();
+    }
+
+    function endPinch(event) {
+        if (!pinchGesture || event.touches.length >= 2) return;
+        pinchGesture = null;
+        window.clearTimeout(pinchFinishTimer);
+        // Give Kakao Maps a moment to commit the new projection, then hand control
+        // back quickly so a remaining finger can continue panning without lag.
+        pinchFinishTimer = window.setTimeout(clearPinchTransform, 80);
     }
 
     function chooseRasterSize(box) {
@@ -433,11 +494,12 @@
 
     function onZoomStart() {
         window.clearTimeout(idleTimer);
-        canvas?.classList.add('zooming');
+        if (!canvas?.classList.contains('pinching')) canvas?.classList.add('zooming');
         queuePositionUpdate();
     }
 
     function onMapIdle() {
+        if (canvas?.classList.contains('pinching')) clearPinchTransform();
         queuePositionUpdate();
         window.clearTimeout(idleTimer);
         idleTimer = window.setTimeout(async () => {
@@ -456,6 +518,15 @@
         getElement('skyviewBtn')?.addEventListener('click', () => setMapType('skyview'));
         getElement('recenterMapBtn')?.addEventListener('click', fitToDepot);
         getElement('currentLocationBtn')?.addEventListener('click', showCurrentPosition);
+        getElement('displaySettingsBtn')?.addEventListener('click', () => {
+            const panel = getElement('cadLayerPanel');
+            const button = getElement('displaySettingsBtn');
+            if (!panel || !button) return;
+            const willOpen = panel.hidden;
+            panel.hidden = !willOpen;
+            button.classList.toggle('active', willOpen);
+            button.setAttribute('aria-expanded', String(willOpen));
+        });
         getElement('cadCoreLayersBtn')?.addEventListener('click', () => applySelection(
             (layer) => CORE_LAYER_NAMES.has(layer.name)
         ));
@@ -485,6 +556,13 @@
         window.kakao.maps.event.addListener(map, 'dragstart', () => canvas?.classList.remove('zooming'));
         window.kakao.maps.event.addListener(map, 'drag', queuePositionUpdate);
         window.kakao.maps.event.addListener(map, 'idle', onMapIdle);
+
+        const mapSurface = getElement('kakaoMap');
+        const touchOptions = { passive: true, capture: true };
+        mapSurface?.addEventListener('touchstart', beginPinch, touchOptions);
+        mapSurface?.addEventListener('touchmove', updatePinch, touchOptions);
+        mapSurface?.addEventListener('touchend', endPinch, touchOptions);
+        mapSurface?.addEventListener('touchcancel', endPinch, touchOptions);
     }
 
     async function initialize() {
