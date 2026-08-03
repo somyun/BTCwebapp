@@ -5,6 +5,7 @@
     const CAD_MANIFEST_URL = './cad-data/hopo/manifest.json';
     const CORE_LAYER_NAMES = new Set(['0', 'SIMPLE', 'CABLE', '신설', '신설1', 'WALL', '전주']);
     const OVERLAY_PADDING_RATIO = 0.015;
+    const DETAIL_ZOOM_STEPS = [1, 2, 4, 8];
 
     const layerCache = new Map();
     const selectedLayers = new Set();
@@ -29,9 +30,130 @@
     let currentPositionAccuracy = null;
     let pinchGesture = null;
     let pinchFinishTimer = 0;
+    let detailScale = 1;
+    let detailOffset = { x: 0, y: 0 };
+    let detailPanGesture = null;
+    let detailTransitionTimer = 0;
+    let detailInteractionLocked = false;
 
     function getElement(id) {
         return document.getElementById(id);
+    }
+
+    function minimumMapLevel() {
+        return currentMapType === 'skyview' ? 0 : 1;
+    }
+
+    function clampDetailOffset(scale = detailScale, offset = detailOffset) {
+        const view = getElement('mapView');
+        if (!view || scale <= 1) return { x: 0, y: 0 };
+        const maxX = ((scale - 1) * view.clientWidth) / 2;
+        const maxY = ((scale - 1) * view.clientHeight) / 2;
+        return {
+            x: Math.max(-maxX, Math.min(maxX, offset.x)),
+            y: Math.max(-maxY, Math.min(maxY, offset.y))
+        };
+    }
+
+    function updateZoomControls() {
+        const detailButton = getElement('detailZoomBtn');
+        const active = detailScale > 1.001;
+        if (detailButton) {
+            const displayScale = Number.isInteger(detailScale)
+                ? detailScale.toFixed(0)
+                : detailScale.toFixed(1);
+            detailButton.textContent = active ? `상세 ${displayScale}×` : '상세확대';
+            detailButton.classList.toggle('active', active);
+            detailButton.setAttribute('aria-pressed', String(active));
+        }
+
+        const zoomInButton = getElement('zoomInBtn');
+        const zoomOutButton = getElement('zoomOutBtn');
+        if (zoomInButton) zoomInButton.disabled = detailScale >= DETAIL_ZOOM_STEPS[DETAIL_ZOOM_STEPS.length - 1] - 0.001;
+        if (zoomOutButton) zoomOutButton.disabled = detailScale <= 1.001 && map?.getLevel() >= 14;
+    }
+
+    function applyDetailTransform(animate = false) {
+        const stage = getElement('mapZoomStage');
+        if (!stage) return;
+
+        detailOffset = clampDetailOffset();
+        const active = detailScale > 1.001;
+        stage.classList.toggle('detail-mode', active);
+        stage.classList.toggle('detail-transition', animate);
+        stage.style.transform = active
+            ? `translate3d(${detailOffset.x}px, ${detailOffset.y}px, 0) scale(${detailScale})`
+            : '';
+
+        window.clearTimeout(detailTransitionTimer);
+        if (animate) {
+            detailTransitionTimer = window.setTimeout(() => {
+                stage.classList.remove('detail-transition');
+            }, 240);
+        }
+
+        if (map && active !== detailInteractionLocked) {
+            map.setDraggable(!active);
+            map.setZoomable(!active);
+            detailInteractionLocked = active;
+        }
+        updateZoomControls();
+    }
+
+    function setDetailScale(nextScale, anchor = null, animate = false) {
+        const view = getElement('mapView');
+        const oldScale = detailScale;
+        const boundedScale = Math.max(1, Math.min(DETAIL_ZOOM_STEPS[DETAIL_ZOOM_STEPS.length - 1], nextScale));
+
+        if (view && anchor && oldScale > 0) {
+            const rect = view.getBoundingClientRect();
+            const centerX = rect.left + (rect.width / 2);
+            const centerY = rect.top + (rect.height / 2);
+            const ratio = boundedScale / oldScale;
+            detailOffset = {
+                x: anchor.x - centerX - (ratio * (anchor.x - centerX - detailOffset.x)),
+                y: anchor.y - centerY - (ratio * (anchor.y - centerY - detailOffset.y))
+            };
+        }
+
+        detailScale = boundedScale;
+        if (detailScale <= 1.001) {
+            detailScale = 1;
+            detailOffset = { x: 0, y: 0 };
+        }
+        applyDetailTransform(animate);
+    }
+
+    function resetDetailZoom(animate = false) {
+        setDetailScale(1, null, animate);
+    }
+
+    function cycleDetailZoom() {
+        if (!map) return;
+        if (map.getLevel() !== minimumMapLevel()) map.setLevel(minimumMapLevel());
+        const next = detailScale < 1.5 ? 2 : detailScale < 3 ? 4 : detailScale < 6 ? 8 : 1;
+        setDetailScale(next, null, true);
+    }
+
+    function zoomIn() {
+        if (!map) return;
+        const level = map.getLevel();
+        if (detailScale > 1.001 || level <= minimumMapLevel()) {
+            const next = detailScale < 1.5 ? 2 : detailScale < 3 ? 4 : 8;
+            setDetailScale(next, null, true);
+            return;
+        }
+        map.setLevel(level - 1, { animate: true });
+    }
+
+    function zoomOut() {
+        if (!map) return;
+        if (detailScale > 1.001) {
+            const next = detailScale > 6 ? 4 : detailScale > 3 ? 2 : 1;
+            setDetailScale(next, null, true);
+            return;
+        }
+        map.setLevel(Math.min(14, map.getLevel() + 1), { animate: true });
     }
 
     function setLayerStatus(text, tone = 'ready') {
@@ -101,6 +223,7 @@
     function setMapType(type) {
         if (!map) return;
 
+        resetDetailZoom();
         currentMapType = type === 'roadmap' ? 'roadmap' : 'skyview';
         map.setMapTypeId(currentMapType === 'skyview'
             ? window.kakao.maps.MapTypeId.SKYVIEW
@@ -115,6 +238,7 @@
     function fitToDepot() {
         if (!map || !manifest) return;
 
+        resetDetailZoom();
         const [west, south, east, north] = manifest.bounds_wgs84;
         const bounds = new window.kakao.maps.LatLngBounds();
         bounds.extend(new window.kakao.maps.LatLng(south, west));
@@ -150,6 +274,7 @@
             return;
         }
 
+        resetDetailZoom();
         button.disabled = true;
         button.setAttribute('aria-label', '현재 위치 확인 중');
         setLocationStatus('현재 위치 권한을 확인하고 있습니다.', 'loading');
@@ -272,14 +397,41 @@
     }
 
     function beginPinch(event) {
-        if (!canvas || event.touches.length !== 2) return;
+        if (!canvas) return;
+
+        if (detailScale > 1.001 && event.touches.length === 1) {
+            const touch = event.touches[0];
+            detailPanGesture = {
+                x: touch.clientX,
+                y: touch.clientY,
+                offset: { ...detailOffset }
+            };
+            getElement('mapZoomStage')?.classList.add('dragging');
+            return;
+        }
+
+        if (event.touches.length !== 2) return;
         const first = event.touches[0];
         const second = event.touches[1];
         const midpoint = touchMidpoint(first, second);
-        const canvasRect = canvas.getBoundingClientRect();
 
         window.clearTimeout(pinchFinishTimer);
+        detailPanGesture = null;
+        if (detailScale > 1.001) {
+            pinchGesture = {
+                mode: 'detail',
+                distance: Math.max(1, touchDistance(first, second)),
+                midpoint,
+                scale: detailScale,
+                offset: { ...detailOffset }
+            };
+            getElement('mapZoomStage')?.classList.add('dragging');
+            return;
+        }
+
+        const canvasRect = canvas.getBoundingClientRect();
         pinchGesture = {
+            mode: 'map',
             distance: Math.max(1, touchDistance(first, second)),
             midpoint
         };
@@ -290,11 +442,39 @@
     }
 
     function updatePinch(event) {
+        if (detailPanGesture && event.touches.length === 1 && detailScale > 1.001) {
+            const touch = event.touches[0];
+            detailOffset = {
+                x: detailPanGesture.offset.x + touch.clientX - detailPanGesture.x,
+                y: detailPanGesture.offset.y + touch.clientY - detailPanGesture.y
+            };
+            applyDetailTransform();
+            return;
+        }
+
         if (!pinchGesture || event.touches.length !== 2 || !canvas) return;
         const first = event.touches[0];
         const second = event.touches[1];
         const midpoint = touchMidpoint(first, second);
-        const scale = Math.max(0.25, Math.min(4, touchDistance(first, second) / pinchGesture.distance));
+        const distanceRatio = touchDistance(first, second) / pinchGesture.distance;
+
+        if (pinchGesture.mode === 'detail') {
+            detailScale = Math.max(1, Math.min(DETAIL_ZOOM_STEPS[DETAIL_ZOOM_STEPS.length - 1], pinchGesture.scale * distanceRatio));
+            const viewRect = getElement('mapView')?.getBoundingClientRect();
+            if (viewRect) {
+                const centerX = viewRect.left + (viewRect.width / 2);
+                const centerY = viewRect.top + (viewRect.height / 2);
+                const ratio = detailScale / pinchGesture.scale;
+                detailOffset = {
+                    x: midpoint.x - centerX - (ratio * (pinchGesture.midpoint.x - centerX - pinchGesture.offset.x)),
+                    y: midpoint.y - centerY - (ratio * (pinchGesture.midpoint.y - centerY - pinchGesture.offset.y))
+                };
+            }
+            applyDetailTransform();
+            return;
+        }
+
+        const scale = Math.max(0.25, Math.min(4, distanceRatio));
         const translateX = midpoint.x - pinchGesture.midpoint.x;
         const translateY = midpoint.y - pinchGesture.midpoint.y;
         canvas.style.transform = `translate3d(${translateX}px, ${translateY}px, 0) scale(${scale})`;
@@ -310,12 +490,71 @@
     }
 
     function endPinch(event) {
+        if (detailPanGesture && event.touches.length === 0) {
+            detailPanGesture = null;
+            getElement('mapZoomStage')?.classList.remove('dragging');
+        }
         if (!pinchGesture || event.touches.length >= 2) return;
+
+        if (pinchGesture.mode === 'detail') {
+            pinchGesture = null;
+            if (event.touches.length === 1) {
+                const touch = event.touches[0];
+                detailPanGesture = {
+                    x: touch.clientX,
+                    y: touch.clientY,
+                    offset: { ...detailOffset }
+                };
+            } else {
+                getElement('mapZoomStage')?.classList.remove('dragging');
+            }
+            if (detailScale < 1.15) resetDetailZoom(true);
+            else applyDetailTransform();
+            return;
+        }
+
         pinchGesture = null;
         window.clearTimeout(pinchFinishTimer);
         // Give Kakao Maps a moment to commit the new projection, then hand control
         // back quickly so a remaining finger can continue panning without lag.
         pinchFinishTimer = window.setTimeout(clearPinchTransform, 80);
+    }
+
+    function beginDetailPointerPan(event) {
+        if (detailScale <= 1.001 || event.pointerType === 'touch' || event.button !== 0) return;
+        const stage = getElement('mapZoomStage');
+        detailPanGesture = {
+            pointerId: event.pointerId,
+            x: event.clientX,
+            y: event.clientY,
+            offset: { ...detailOffset }
+        };
+        stage?.setPointerCapture?.(event.pointerId);
+        stage?.classList.add('dragging');
+        event.preventDefault();
+    }
+
+    function updateDetailPointerPan(event) {
+        if (!detailPanGesture || detailPanGesture.pointerId !== event.pointerId) return;
+        detailOffset = {
+            x: detailPanGesture.offset.x + event.clientX - detailPanGesture.x,
+            y: detailPanGesture.offset.y + event.clientY - detailPanGesture.y
+        };
+        applyDetailTransform();
+        event.preventDefault();
+    }
+
+    function endDetailPointerPan(event) {
+        if (!detailPanGesture || detailPanGesture.pointerId !== event.pointerId) return;
+        detailPanGesture = null;
+        getElement('mapZoomStage')?.classList.remove('dragging');
+    }
+
+    function detailWheelZoom(event) {
+        if (detailScale <= 1.001) return;
+        event.preventDefault();
+        const factor = Math.exp(-event.deltaY * 0.0015);
+        setDetailScale(detailScale * factor, { x: event.clientX, y: event.clientY });
     }
 
     function chooseRasterSize(box) {
@@ -509,7 +748,13 @@
             } else {
                 updateOverlayPosition();
             }
+            updateZoomControls();
         }, 330);
+    }
+
+    function onMapZoomChanged() {
+        queuePositionUpdate();
+        updateZoomControls();
     }
 
     function bindControls() {
@@ -518,6 +763,9 @@
         getElement('skyviewBtn')?.addEventListener('click', () => setMapType('skyview'));
         getElement('recenterMapBtn')?.addEventListener('click', fitToDepot);
         getElement('currentLocationBtn')?.addEventListener('click', showCurrentPosition);
+        getElement('detailZoomBtn')?.addEventListener('click', cycleDetailZoom);
+        getElement('zoomInBtn')?.addEventListener('click', zoomIn);
+        getElement('zoomOutBtn')?.addEventListener('click', zoomOut);
         getElement('displaySettingsBtn')?.addEventListener('click', () => {
             const panel = getElement('cadLayerPanel');
             const button = getElement('displaySettingsBtn');
@@ -543,6 +791,7 @@
             if (!map) return;
             window.kakao.maps.event.trigger(map, 'resize');
             updateOverlayPosition();
+            applyDetailTransform();
             await renderRaster(true);
         });
         controlsBound = true;
@@ -550,7 +799,7 @@
 
     function bindMapEvents() {
         window.kakao.maps.event.addListener(map, 'zoom_start', onZoomStart);
-        window.kakao.maps.event.addListener(map, 'zoom_changed', queuePositionUpdate);
+        window.kakao.maps.event.addListener(map, 'zoom_changed', onMapZoomChanged);
         window.kakao.maps.event.addListener(map, 'center_changed', queuePositionUpdate);
         window.kakao.maps.event.addListener(map, 'bounds_changed', queuePositionUpdate);
         window.kakao.maps.event.addListener(map, 'dragstart', () => canvas?.classList.remove('zooming'));
@@ -563,6 +812,13 @@
         mapSurface?.addEventListener('touchmove', updatePinch, touchOptions);
         mapSurface?.addEventListener('touchend', endPinch, touchOptions);
         mapSurface?.addEventListener('touchcancel', endPinch, touchOptions);
+
+        const stage = getElement('mapZoomStage');
+        stage?.addEventListener('pointerdown', beginDetailPointerPan);
+        stage?.addEventListener('pointermove', updateDetailPointerPan);
+        stage?.addEventListener('pointerup', endDetailPointerPan);
+        stage?.addEventListener('pointercancel', endDetailPointerPan);
+        stage?.addEventListener('wheel', detailWheelZoom, { passive: false });
     }
 
     async function initialize() {
@@ -581,8 +837,6 @@
                     center: new window.kakao.maps.LatLng(latitude, longitude),
                     level: 4
                 });
-                const zoomControl = new window.kakao.maps.ZoomControl();
-                map.addControl(zoomControl, window.kakao.maps.ControlPosition.RIGHT);
                 bindMapEvents();
             }
 

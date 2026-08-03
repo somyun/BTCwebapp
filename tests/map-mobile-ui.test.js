@@ -28,3 +28,14 @@ test('mobile pinch updates the CAD canvas transform during the gesture', () => {
     assert.match(mapSource, /translate3d\(\$\{translateX\}px, \$\{translateY\}px, 0\) scale\(\$\{scale\}\)/);
     assert.match(styles, /\.cad-map-overlay\.pinching\s*{[\s\S]*?transition: none;/);
 });
+
+test('detail zoom cycles beyond the Kakao tile limit and keeps controls fixed', () => {
+    assert.match(html, /id="mapZoomStage" class="map-zoom-stage"/);
+    assert.match(html, /id="detailZoomBtn"[^>]*aria-pressed="false"/);
+    assert.match(html, /id="zoomInBtn"[^>]*aria-label="지도 확대"/);
+    assert.match(html, /id="zoomOutBtn"[^>]*aria-label="지도 축소"/);
+    assert.match(mapSource, /DETAIL_ZOOM_STEPS = \[1, 2, 4, 8\]/);
+    assert.match(mapSource, /map\.setDraggable\(!active\)/);
+    assert.match(mapSource, /stage\.style\.transform = active/);
+    assert.match(styles, /\.map-zoom-controls\s*{[\s\S]*?top: 50%;[\s\S]*?right: 12px;/);
+});
