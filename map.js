@@ -16,7 +16,6 @@
     let manifestUrl = null;
     let map = null;
     let canvas = null;
-    let context = null;
     let controlsBound = false;
     let layerListBuilt = false;
     let initialSelectionApplied = false;
@@ -101,7 +100,7 @@
         if (rotateButton) {
             rotateButton.classList.toggle('active', rotated);
             rotateButton.setAttribute('aria-pressed', String(rotated));
-            rotateButton.title = rotated ? `현재 회전 ${Math.round(detailRotation)}도` : '15도씩 회전';
+            rotateButton.title = rotated ? `현재 회전 ${Math.round(detailRotation)}도` : '오른쪽으로 90도 회전';
         }
         const compass = getElement('mapCompassBtn');
         if (compass) compass.hidden = !rotated;
@@ -176,7 +175,7 @@
     }
 
     function rotateMapStep() {
-        setMapRotation(detailRotation + 15, true);
+        setMapRotation(detailRotation + 90, true);
     }
 
     function resetMapRotation() {
@@ -188,6 +187,37 @@
         detailScale = 1;
         detailOffset = { x: 0, y: 0 };
         applyDetailTransform(animate);
+    }
+
+    function screenDeltaToMapDelta(deltaX, deltaY) {
+        const radians = detailRotation * Math.PI / 180;
+        const cosine = Math.cos(radians);
+        const sine = Math.sin(radians);
+        const scale = transformedScale();
+        return {
+            x: ((cosine * deltaX) + (sine * deltaY)) / scale,
+            y: ((-sine * deltaX) + (cosine * deltaY)) / scale
+        };
+    }
+
+    function panTransformedMap(deltaX, deltaY) {
+        if (!map || (!deltaX && !deltaY)) return;
+        const projection = map.getProjection();
+        const centerPoint = projection.containerPointFromCoords(map.getCenter());
+        const delta = screenDeltaToMapDelta(deltaX, deltaY);
+        const targetPoint = new window.kakao.maps.Point(
+            centerPoint.x - delta.x,
+            centerPoint.y - delta.y
+        );
+        map.setCenter(projection.coordsFromContainerPoint(targetPoint));
+    }
+
+    function commitDetailOffsetToMap() {
+        if (Math.abs(detailOffset.x) < 0.01 && Math.abs(detailOffset.y) < 0.01) return;
+        const offset = { ...detailOffset };
+        detailOffset = { x: 0, y: 0 };
+        panTransformedMap(offset.x, offset.y);
+        applyDetailTransform();
     }
 
     function cycleDetailZoom() {
@@ -458,10 +488,6 @@
         };
     }
 
-    function touchAngle(first, second) {
-        return Math.atan2(second.clientY - first.clientY, second.clientX - first.clientX) * 180 / Math.PI;
-    }
-
     function beginPinch(event) {
         if (!canvas) return;
 
@@ -469,8 +495,7 @@
             const touch = event.touches[0];
             detailPanGesture = {
                 x: touch.clientX,
-                y: touch.clientY,
-                offset: { ...detailOffset }
+                y: touch.clientY
             };
             getElement('mapZoomStage')?.classList.add('dragging');
             return;
@@ -488,9 +513,7 @@
                 mode: 'detail',
                 distance: Math.max(1, touchDistance(first, second)),
                 midpoint,
-                angle: touchAngle(first, second),
                 scale: detailScale,
-                rotation: detailRotation,
                 offset: { ...detailOffset }
             };
             getElement('mapZoomStage')?.classList.add('dragging');
@@ -512,11 +535,12 @@
     function updatePinch(event) {
         if (detailPanGesture && event.touches.length === 1 && customTransformActive()) {
             const touch = event.touches[0];
-            detailOffset = {
-                x: detailPanGesture.offset.x + touch.clientX - detailPanGesture.x,
-                y: detailPanGesture.offset.y + touch.clientY - detailPanGesture.y
-            };
-            applyDetailTransform();
+            panTransformedMap(
+                touch.clientX - detailPanGesture.x,
+                touch.clientY - detailPanGesture.y
+            );
+            detailPanGesture.x = touch.clientX;
+            detailPanGesture.y = touch.clientY;
             return;
         }
 
@@ -528,9 +552,6 @@
 
         if (pinchGesture.mode === 'detail') {
             detailScale = Math.max(1, Math.min(DETAIL_ZOOM_STEPS[DETAIL_ZOOM_STEPS.length - 1], pinchGesture.scale * distanceRatio));
-            detailRotation = normalizeRotation(
-                pinchGesture.rotation + touchAngle(first, second) - pinchGesture.angle
-            );
             const viewRect = getElement('mapView')?.getBoundingClientRect();
             if (viewRect) {
                 const centerX = viewRect.left + (viewRect.width / 2);
@@ -573,12 +594,12 @@
                 const touch = event.touches[0];
                 detailPanGesture = {
                     x: touch.clientX,
-                    y: touch.clientY,
-                    offset: { ...detailOffset }
+                    y: touch.clientY
                 };
             } else {
                 getElement('mapZoomStage')?.classList.remove('dragging');
             }
+            commitDetailOffsetToMap();
             if (detailScale < 1.15) resetDetailZoom(true);
             else applyDetailTransform();
             return;
@@ -597,8 +618,7 @@
         detailPanGesture = {
             pointerId: event.pointerId,
             x: event.clientX,
-            y: event.clientY,
-            offset: { ...detailOffset }
+            y: event.clientY
         };
         stage?.setPointerCapture?.(event.pointerId);
         stage?.classList.add('dragging');
@@ -607,11 +627,12 @@
 
     function updateDetailPointerPan(event) {
         if (!detailPanGesture || detailPanGesture.pointerId !== event.pointerId) return;
-        detailOffset = {
-            x: detailPanGesture.offset.x + event.clientX - detailPanGesture.x,
-            y: detailPanGesture.offset.y + event.clientY - detailPanGesture.y
-        };
-        applyDetailTransform();
+        panTransformedMap(
+            event.clientX - detailPanGesture.x,
+            event.clientY - detailPanGesture.y
+        );
+        detailPanGesture.x = event.clientX;
+        detailPanGesture.y = event.clientY;
         event.preventDefault();
     }
 
@@ -624,26 +645,8 @@
     function detailWheelZoom(event) {
         if (!customTransformActive()) return;
         event.preventDefault();
-        if (event.shiftKey) {
-            setMapRotation(detailRotation + (event.deltaY * 0.05));
-            return;
-        }
         const factor = Math.exp(-event.deltaY * 0.0015);
         setDetailScale(detailScale * factor, { x: event.clientX, y: event.clientY });
-    }
-
-    function chooseRasterSize(box) {
-        const aspect = Math.max(0.05, Math.min(2, box.width / Math.max(box.height, 1)));
-        const deviceScale = window.devicePixelRatio || 1;
-        let height = Math.max(2048, Math.min(8192, Math.round(box.height * deviceScale * 1.35)));
-        let width = Math.max(512, Math.round(height * aspect));
-
-        if (width > 4096) {
-            const factor = 4096 / width;
-            width = 4096;
-            height = Math.round(height * factor);
-        }
-        return { width, height };
     }
 
     function displayColor(color) {
@@ -654,73 +657,89 @@
         return color || '#00d9e8';
     }
 
+    function createSvgElement(name, attributes = {}) {
+        const element = document.createElementNS('http://www.w3.org/2000/svg', name);
+        for (const [key, value] of Object.entries(attributes)) {
+            element.setAttribute(key, String(value));
+        }
+        return element;
+    }
+
     async function renderRaster(force = false) {
-        if (!map || !manifest || !canvas || !context || (!rasterDirty && !force)) return;
+        if (!map || !manifest || !canvas || (!rasterDirty && !force)) return;
 
         const box = overlayScreenBox();
         updateOverlayPosition();
-        const size = chooseRasterSize(box);
-        if (canvas.width !== size.width || canvas.height !== size.height) {
-            canvas.width = size.width;
-            canvas.height = size.height;
-        }
-
-        context.clearRect(0, 0, canvas.width, canvas.height);
-        context.lineJoin = 'round';
-        context.lineCap = 'round';
+        const width = Math.max(1, box.width);
+        const height = Math.max(1, box.height);
+        canvas.setAttribute('viewBox', `0 0 ${width} ${height}`);
 
         const projection = map.getProjection();
-        const scaleX = canvas.width / Math.max(box.width, 1);
-        const scaleY = canvas.height / Math.max(box.height, 1);
-        const screenScale = Math.min(scaleX, scaleY);
         const toPixel = ([longitude, latitude]) => {
             const point = projection.containerPointFromCoords(
                 new window.kakao.maps.LatLng(latitude, longitude)
             );
             return [
-                (point.x - box.left) * scaleX,
-                (point.y - box.top) * scaleY
+                point.x - box.left,
+                point.y - box.top
             ];
         };
         const showLabels = Boolean(getElement('cadLabelToggle')?.checked);
+        const fragment = document.createDocumentFragment();
 
         for (const layerInfo of manifest.layers) {
             if (!selectedLayers.has(layerInfo.id)) continue;
             const layer = await loadLayer(layerInfo);
-            context.strokeStyle = displayColor(layer.color);
-            context.fillStyle = context.strokeStyle;
-            context.lineWidth = Math.max(1, screenScale);
-            context.beginPath();
+            const color = displayColor(layer.color);
+            const commands = [];
 
             for (const path of layer.paths) {
-                let first = true;
-                for (const coordinate of path) {
+                for (let index = 0; index < path.length; index += 1) {
+                    const coordinate = path[index];
                     const [x, y] = toPixel(coordinate);
-                    if (first) {
-                        context.moveTo(x, y);
-                        first = false;
-                    } else {
-                        context.lineTo(x, y);
-                    }
+                    commands.push(`${index === 0 ? 'M' : 'L'}${x.toFixed(2)} ${y.toFixed(2)}`);
                 }
             }
-            context.stroke();
+            if (commands.length) {
+                fragment.appendChild(createSvgElement('path', {
+                    d: commands.join(' '),
+                    fill: 'none',
+                    stroke: color,
+                    'stroke-width': 1.2,
+                    'stroke-linecap': 'round',
+                    'stroke-linejoin': 'round',
+                    'vector-effect': 'non-scaling-stroke'
+                }));
+            }
 
-            const pointSize = Math.max(2, screenScale * 2);
             for (const coordinate of layer.points) {
                 const [x, y] = toPixel(coordinate);
-                context.fillRect(x - pointSize / 2, y - pointSize / 2, pointSize, pointSize);
+                fragment.appendChild(createSvgElement('rect', {
+                    x: x - 1.5,
+                    y: y - 1.5,
+                    width: 3,
+                    height: 3,
+                    fill: color
+                }));
             }
 
             if (showLabels) {
-                context.font = `${Math.max(10, 11 * screenScale)}px "Malgun Gothic", sans-serif`;
                 for (const label of layer.labels) {
                     const [x, y] = toPixel(label.position);
-                    context.fillText(label.text, x, y);
+                    const text = createSvgElement('text', {
+                        x,
+                        y,
+                        fill: color,
+                        'font-size': 11,
+                        'font-family': 'Malgun Gothic, sans-serif'
+                    });
+                    text.textContent = label.text;
+                    fragment.appendChild(text);
                 }
             }
         }
 
+        canvas.replaceChildren(fragment);
         rasterDirty = false;
         renderedLevel = map.getLevel();
     }
@@ -905,8 +924,7 @@
             const results = await Promise.all([loadKakaoMapSdk(), loadManifest()]);
             manifest = results[1];
             canvas = getElement('cadOverlay');
-            context = canvas?.getContext('2d') || null;
-            if (!canvas || !context) throw new Error('도면 표시 화면을 준비하지 못했습니다.');
+            if (!canvas) throw new Error('도면 표시 화면을 준비하지 못했습니다.');
 
             if (!map) {
                 const [longitude, latitude] = manifest.center_wgs84;
