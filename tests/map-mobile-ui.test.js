@@ -61,8 +61,9 @@ test('CAD overlay keeps vector labels upright by mode and constant in detail zoo
     assert.match(mapSource, /createSvgElement\('path'/);
     assert.match(mapSource, /createSvgElement\('text'/);
     assert.match(mapSource, /class: 'cad-map-label'/);
-    assert.match(mapSource, /detectedLabelRotation\(viewportLandscape\)/);
+    assert.match(mapSource, /transform: `rotate\(\$\{labelRotationDegrees\} \$\{x\} \$\{y\}\)`/);
+    assert.match(mapSource, /label\.setAttribute\('transform', `rotate\(\$\{labelRotationDegrees\} \$\{x\} \$\{y\}\)`\)/);
     assert.match(mapSource, /String\(1 \/ detailScale\)/);
     assert.match(mapSource, /'vector-effect': 'non-scaling-stroke'/);
-    assert.match(styles, /\.cad-map-label\s*{[\s\S]*?rotate\(var\(--cad-label-rotation\)\) scale\(var\(--cad-label-inverse-scale\)\)/);
+    assert.match(styles, /\.cad-map-label\s*{[\s\S]*?font-size: calc\(11px \* var\(--cad-label-inverse-scale\)\)/);
 });

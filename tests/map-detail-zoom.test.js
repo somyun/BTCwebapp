@@ -35,6 +35,9 @@ function element(overrides = {}) {
 }
 
 async function createHarness() {
+    const renderedLabel = element({
+        getAttribute(name) { return name === 'x' ? '125' : '240'; }
+    });
     const elements = {
         mapView: element({
             clientWidth: 1000,
@@ -46,6 +49,7 @@ async function createHarness() {
         cadOverlay: element({
             width: 0,
             height: 0,
+            querySelectorAll: (selector) => selector === '.cad-map-label' ? [renderedLabel] : [],
             getBoundingClientRect: () => ({ left: 0, top: 0 }),
             getContext: () => ({
                 clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {},
@@ -182,7 +186,7 @@ async function createHarness() {
     const source = fs.readFileSync(path.join(__dirname, '..', 'map.js'), 'utf8');
     vm.runInContext(source, context);
     await window.BWAMap.initialize();
-    return { elements, documentListeners, orientationListeners, window, windowListeners, getMap: () => mapInstance };
+    return { elements, documentListeners, orientationListeners, renderedLabel, window, windowListeners, getMap: () => mapInstance };
 }
 
 test('detail button cycles 2x, 4x, 8x and restores normal map interaction', async () => {
@@ -235,26 +239,29 @@ test('an outside pointer closes the layer panel', async () => {
 });
 
 test('device orientation automatically rotates labels in the matching landscape direction', async () => {
-    const { elements, window, windowListeners, getMap } = await createHarness();
+    const { elements, renderedLabel, window, windowListeners, getMap } = await createHarness();
 
     window.innerWidth = 1000;
     window.innerHeight = 600;
     window.screen.orientation.angle = 90;
     await windowListeners.resize();
     assert.equal(elements.mapView.classList.contains('landscape-mode'), true);
-    assert.equal(elements.cadOverlay.style['--cad-label-rotation'], '-90deg');
+    assert.equal(elements.cadOverlay.dataset.labelRotation, '-90');
+    assert.equal(renderedLabel.transform, 'rotate(-90 125 240)');
     assert.doesNotMatch(elements.mapZoomStage.style.transform || '', /rotate/);
     assert.equal(getMap().draggable, true);
 
     window.screen.orientation.angle = 270;
     await windowListeners.resize();
-    assert.equal(elements.cadOverlay.style['--cad-label-rotation'], '90deg');
+    assert.equal(elements.cadOverlay.dataset.labelRotation, '90');
+    assert.equal(renderedLabel.transform, 'rotate(90 125 240)');
 
     window.innerWidth = 600;
     window.innerHeight = 1000;
     await windowListeners.resize();
     assert.equal(elements.mapView.classList.contains('landscape-mode'), false);
-    assert.equal(elements.cadOverlay.style['--cad-label-rotation'], '0deg');
+    assert.equal(elements.cadOverlay.dataset.labelRotation, '0');
+    assert.equal(renderedLabel.transform, 'rotate(0 125 240)');
 });
 
 test('detail zoom applies the inverse scale used to keep labels the same size', async () => {
