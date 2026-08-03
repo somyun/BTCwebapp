@@ -139,9 +139,22 @@
     <div id="mapAuthOverlay" class="map-auth-overlay" hidden>
         <section class="map-auth-dialog" role="dialog" aria-modal="true" aria-labelledby="mapAuthTitle">
             <h2 id="mapAuthTitle">도면 지도 로그인</h2>
-            <p>부산교통공사 이메일 계정으로 인증하면 이 브라우저 또는 PWA에서는 로그인 상태가 유지됩니다.</p>
+            <p>부산교통공사 이메일로 받은 6자리 인증코드를 입력하세요. 인증은 이 브라우저 또는 PWA에 유지됩니다.</p>
+            <label class="map-auth-field" for="mapAuthEmail">
+                <span>부산교통공사 이메일</span>
+                <input id="mapAuthEmail" type="email" inputmode="email" autocomplete="email"
+                    placeholder="name@humetro.busan.kr">
+            </label>
+            <button id="mapAuthSendCodeBtn" type="button">인증코드 받기</button>
+            <div id="mapAuthCodeSection" hidden>
+                <label class="map-auth-field" for="mapAuthCode">
+                    <span>6자리 인증코드</span>
+                    <input id="mapAuthCode" type="text" inputmode="numeric" autocomplete="one-time-code"
+                        maxlength="6" pattern="[0-9]{6}" placeholder="000000">
+                </label>
+                <button id="mapAuthVerifyBtn" type="button">인증하고 도면 열기</button>
+            </div>
             <p id="mapAuthMessage" class="map-auth-message" role="status" aria-live="polite"></p>
-            <button id="mapAuthLoginBtn" type="button">@humetro.busan.kr 계정으로 로그인</button>
             <button id="mapAuthCancelBtn" class="map-auth-cancel" type="button">취소</button>
         </section>
     </div>
@@ -197,9 +210,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <script src="read-adapter.js?v=p2-firestore"></script>
     <script src="production-read.js?v=p2-firestore"></script>
-    <script src="auth.js?v=humetro-auth-1"></script>
+    <script src="auth.js?v=humetro-code-1"></script>
     <script src="map.js?v=hopo-cad-2"></script>
-    <script src="script.js?v=humetro-auth-1"></script>
+    <script src="script.js?v=humetro-code-1"></script>
 </body>
 
 </html>
