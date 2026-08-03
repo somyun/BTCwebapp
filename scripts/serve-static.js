@@ -5,7 +5,7 @@ const path = require('node:path');
 const { readFile, stat } = require('node:fs/promises');
 
 const root = path.resolve(__dirname, '..');
-const port = Number(process.env.PORT || 4180);
+const port = Number(process.env.BWA_STATIC_PORT || process.env.PORT || 4180);
 const mimeTypes = {
     '.css': 'text/css; charset=utf-8',
     '.html': 'text/html; charset=utf-8',

@@ -38,6 +38,7 @@ let preparedDownload = null;
 let validationData = {};
 let sortableInstance = null;
 let isSortMode = false;
+let isMapViewActive = false;
 
 // --- API 통신 헬퍼 함수 ---
 async function callApi(action, method = 'GET', data = null) {
@@ -111,6 +112,42 @@ function openMenu() {
 
 if (hamburger) hamburger.addEventListener('click', openMenu);
 if (overlay) overlay.addEventListener('click', closeMenu);
+
+const openMapBtn = document.getElementById('openMapBtn');
+if (openMapBtn) openMapBtn.addEventListener('click', openMapView);
+
+function openMapView() {
+    if (isMeasurementDirty && !confirm('변경사항이 저장되지 않았습니다. 지도 화면으로 이동하시겠습니까?')) {
+        return;
+    }
+
+    const homeView = document.getElementById('homeView');
+    const mapView = document.getElementById('mapView');
+    const headerTitle = document.querySelector('.header-title');
+
+    isMapViewActive = true;
+    homeView?.classList.add('view-hidden');
+    mapView?.classList.remove('view-hidden');
+    document.body.classList.add('map-mode');
+    if (headerTitle) headerTitle.textContent = '차량기지 도면 지도';
+
+    closeMenu();
+    updateHomeButtonVisibility();
+    window.BWAMap?.initialize();
+}
+
+function closeMapView() {
+    const homeView = document.getElementById('homeView');
+    const mapView = document.getElementById('mapView');
+    const headerTitle = document.querySelector('.header-title');
+
+    isMapViewActive = false;
+    mapView?.classList.add('view-hidden');
+    homeView?.classList.remove('view-hidden');
+    document.body.classList.remove('map-mode');
+    if (headerTitle) headerTitle.textContent = 'ERP 점검 웹앱';
+    updateHomeButtonVisibility();
+}
 
 const resetBtn = document.getElementById('resetFavoritesBtn');
 if (resetBtn) {
@@ -1080,6 +1117,10 @@ function initializeFavorites() {
     const homeBtn = document.getElementById('homeBtn');
     if (homeBtn) {
         homeBtn.addEventListener('click', function () {
+            if (isMapViewActive) {
+                closeMapView();
+                return;
+            }
             document.getElementById('formSelect').value = '';
             // [Issue 4 Fix] 여기서 상태를 초기화하지 않고 loadSelectedForm에 위임
             // currentSheetInfo = null; 
@@ -1278,7 +1319,7 @@ function formatDateForDisplay(iso) {
 }
 function updateHomeButtonVisibility() {
     const homeBtn = document.getElementById('homeBtn');
-    if (homeBtn && currentSheetInfo) homeBtn.classList.add('visible');
+    if (homeBtn && (currentSheetInfo || isMapViewActive)) homeBtn.classList.add('visible');
     else if (homeBtn) homeBtn.classList.remove('visible');
 }
 function addHomeStateToHistory() {

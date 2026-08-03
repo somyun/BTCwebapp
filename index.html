@@ -50,6 +50,13 @@
                     <div id="formListStatus" style="margin-top: 5px; font-size: 0.9em;"></div>
                 </div>
 
+                <div class="sidenav-section map-menu-section">
+                    <h3>차량기지 도면</h3>
+                    <button id="openMapBtn" class="map-menu-button" type="button">
+                        지도에서 도면 보기
+                    </button>
+                </div>
+
                 <div class="sidenav-section reset-section">
                     <div class="switch-container">
                         <label class="switch">
@@ -65,35 +72,53 @@
         <main>
             <div id="status"></div>
 
-            <div id="favoritesSection" class="favorites-section">
-                <h3>⭐ 즐겨찾기</h3>
-                <div class="fav-buttons-container">
-                    <button id="favBtn1" class="fav-button" data-fav-id="1" disabled>로딩중</button>
-                    <button id="favBtn2" class="fav-button" data-fav-id="2" disabled>로딩중</button>
-                    <button id="favBtn3" class="fav-button" data-fav-id="3" disabled>로딩중</button>
+            <div id="homeView">
+                <div id="favoritesSection" class="favorites-section">
+                    <h3>⭐ 즐겨찾기</h3>
+                    <div class="fav-buttons-container">
+                        <button id="favBtn1" class="fav-button" data-fav-id="1" disabled>로딩중</button>
+                        <button id="favBtn2" class="fav-button" data-fav-id="2" disabled>로딩중</button>
+                        <button id="favBtn3" class="fav-button" data-fav-id="3" disabled>로딩중</button>
+                    </div>
                 </div>
+
+                <div id="dynamicFormContainer" class="form-section">
+                    <h3>측정값 입력 폼</h3>
+                    <p id="formMessage">메뉴(☰)를 열어 새 양식을 업로드하거나 기존 양식을 선택해주세요.</p>
+
+                    <!-- Main Static Notification Toggle -->
+                    <div id="mainToggleContainer" class="switch-container" style="max-width:300px; margin: 20px 0;">
+                        <label class="switch">
+                            <input type="checkbox" id="notificationToggleMain">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+                <div class="home-spacer" aria-hidden="true"></div>
             </div>
 
-            <div id="dynamicFormContainer" class="form-section">
-                <h3>측정값 입력 폼</h3>
-                <p id="formMessage">메뉴(☰)를 열어 새 양식을 업로드하거나 기존 양식을 선택해주세요.</p>
+            <section id="mapView" class="map-view view-hidden" aria-label="차량기지 도면 지도">
+                <div id="kakaoMap" class="kakao-map" aria-label="카카오 지도"></div>
+                <div id="mapLoading" class="map-loading">지도를 불러오는 중입니다.</div>
 
-                <!-- Main Static Notification Toggle -->
-                <div id="mainToggleContainer" class="switch-container" style="max-width:300px; margin: 20px 0;">
-                    <label class="switch">
-                        <input type="checkbox" id="notificationToggleMain">
-                        <span class="slider"></span>
+                <div class="map-type-controls" aria-label="지도 종류">
+                    <button id="roadmapBtn" class="active" type="button">일반지도</button>
+                    <button id="skyviewBtn" type="button">위성지도</button>
+                    <button id="recenterMapBtn" type="button" title="호포차량기지로 이동">기지로 이동</button>
+                </div>
+
+                <aside class="cad-layer-panel" aria-label="도면 레이어">
+                    <div class="cad-layer-heading">
+                        <h2>도면 레이어</h2>
+                        <span>준비 중</span>
+                    </div>
+                    <label class="cad-layer-option disabled">
+                        <input type="checkbox" disabled>
+                        <span>호포차량기지 전차선</span>
                     </label>
-                </div>
-            </div>
-            <div>
-                <br>
-                <br>
-                <br>
-                <br>
-                <br>
-                <br>
-            </div>
+                    <p>DWG 좌표 분석과 지도 변환이 끝나면 여기에서 도면을 켜고 끌 수 있습니다.</p>
+                </aside>
+            </section>
         </main>
     </div>
 
@@ -147,6 +172,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <script src="read-adapter.js?v=p2-firestore"></script>
     <script src="production-read.js?v=p2-firestore"></script>
+    <script src="map.js?v=kakao-map-1"></script>
     <script src="script.js?v=p2-firestore"></script>
 </body>
 
