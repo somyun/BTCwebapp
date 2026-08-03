@@ -31,7 +31,7 @@
     let pinchFinishTimer = 0;
     let detailScale = 1;
     let detailOffset = { x: 0, y: 0 };
-    let detailRotation = 0;
+    let landscapeMode = false;
     let detailPanGesture = null;
     let detailTransitionTimer = 0;
     let detailInteractionLocked = false;
@@ -44,35 +44,11 @@
         return currentMapType === 'skyview' ? 0 : 1;
     }
 
-    function normalizeRotation(degrees) {
-        let normalized = ((degrees + 180) % 360 + 360) % 360 - 180;
-        if (Math.abs(normalized) < 0.05) normalized = 0;
-        return normalized;
-    }
-
-    function rotationCoverScale() {
-        const view = getElement('mapView');
-        if (!view || !detailRotation) return 1;
-        const radians = Math.abs(detailRotation) * Math.PI / 180;
-        const cosine = Math.abs(Math.cos(radians));
-        const sine = Math.abs(Math.sin(radians));
-        const width = Math.max(1, view.clientWidth);
-        const height = Math.max(1, view.clientHeight);
-        return Math.max(
-            cosine + ((height / width) * sine),
-            cosine + ((width / height) * sine)
-        );
-    }
-
-    function transformedScale() {
-        return Math.max(detailScale, rotationCoverScale());
-    }
-
     function customTransformActive() {
-        return detailScale > 1.001 || Math.abs(detailRotation) > 0.05;
+        return detailScale > 1.001;
     }
 
-    function clampDetailOffset(scale = transformedScale(), offset = detailOffset) {
+    function clampDetailOffset(scale = detailScale, offset = detailOffset) {
         const view = getElement('mapView');
         if (!view || scale <= 1) return { x: 0, y: 0 };
         const maxX = ((scale - 1) * view.clientWidth) / 2;
@@ -95,18 +71,6 @@
             detailButton.setAttribute('aria-pressed', String(detailActive));
         }
 
-        const rotated = Math.abs(detailRotation) > 0.05;
-        const rotateButton = getElement('rotateMapBtn');
-        if (rotateButton) {
-            rotateButton.classList.toggle('active', rotated);
-            rotateButton.setAttribute('aria-pressed', String(rotated));
-            rotateButton.title = rotated ? `현재 회전 ${Math.round(detailRotation)}도` : '오른쪽으로 90도 회전';
-        }
-        const compass = getElement('mapCompassBtn');
-        if (compass) compass.hidden = !rotated;
-        const needle = getElement('mapCompassNeedle');
-        if (needle) needle.style.transform = `rotate(${detailRotation}deg)`;
-
         const zoomInButton = getElement('zoomInBtn');
         const zoomOutButton = getElement('zoomOutBtn');
         if (zoomInButton) zoomInButton.disabled = detailScale >= DETAIL_ZOOM_STEPS[DETAIL_ZOOM_STEPS.length - 1] - 0.001;
@@ -117,14 +81,23 @@
         const stage = getElement('mapZoomStage');
         if (!stage) return;
 
-        const scale = transformedScale();
+        const scale = detailScale;
         detailOffset = clampDetailOffset();
         const active = customTransformActive();
         stage.classList.toggle('detail-mode', active);
         stage.classList.toggle('detail-transition', animate);
         stage.style.transform = active
-            ? `translate3d(${detailOffset.x}px, ${detailOffset.y}px, 0) rotate(${detailRotation}deg) scale(${scale})`
+            ? `translate3d(${detailOffset.x}px, ${detailOffset.y}px, 0) scale(${scale})`
             : '';
+
+        if (canvas) {
+            const inverseScale = String(1 / detailScale);
+            if (canvas.style.setProperty) {
+                canvas.style.setProperty('--cad-label-inverse-scale', inverseScale);
+            } else {
+                canvas.style['--cad-label-inverse-scale'] = inverseScale;
+            }
+        }
 
         window.clearTimeout(detailTransitionTimer);
         if (animate) {
@@ -169,35 +142,71 @@
         setDetailScale(1, null, animate);
     }
 
-    function setMapRotation(degrees, animate = false) {
-        detailRotation = normalizeRotation(degrees);
-        applyDetailTransform(animate);
-    }
-
-    function rotateMapStep() {
-        setMapRotation(detailRotation + 90, true);
-    }
-
-    function resetMapRotation() {
-        setMapRotation(0, true);
-    }
-
     function resetViewTransform(animate = false) {
-        detailRotation = 0;
         detailScale = 1;
         detailOffset = { x: 0, y: 0 };
         applyDetailTransform(animate);
     }
 
     function screenDeltaToMapDelta(deltaX, deltaY) {
-        const radians = detailRotation * Math.PI / 180;
-        const cosine = Math.cos(radians);
-        const sine = Math.sin(radians);
-        const scale = transformedScale();
+        const scale = detailScale;
         return {
-            x: ((cosine * deltaX) + (sine * deltaY)) / scale,
-            y: ((-sine * deltaX) + (cosine * deltaY)) / scale
+            x: deltaX / scale,
+            y: deltaY / scale
         };
+    }
+
+    function updateOrientationMode() {
+        const view = getElement('mapView');
+        const button = getElement('orientationModeBtn');
+        view?.classList.toggle('landscape-mode', landscapeMode);
+        if (button) {
+            button.classList.toggle('active', landscapeMode);
+            button.setAttribute('aria-pressed', String(landscapeMode));
+            button.title = landscapeMode ? '세로 모드로 전환' : '가로 모드로 전환';
+            button.setAttribute('aria-label', button.title);
+        }
+        if (canvas) {
+            const labelRotation = landscapeMode ? '-90deg' : '0deg';
+            if (canvas.style.setProperty) {
+                canvas.style.setProperty('--cad-label-rotation', labelRotation);
+            } else {
+                canvas.style['--cad-label-rotation'] = labelRotation;
+            }
+        }
+    }
+
+    async function setOrientationMode(nextLandscape, requestDeviceOrientation = true) {
+        landscapeMode = Boolean(nextLandscape);
+        updateOrientationMode();
+
+        if (requestDeviceOrientation && window.screen?.orientation?.lock) {
+            try {
+                await window.screen.orientation.lock(landscapeMode ? 'landscape' : 'portrait');
+            } catch (_error) {
+                // Orientation lock is only available in some installed PWAs/browsers.
+                // The map layout and CAD label orientation still switch immediately.
+            }
+        }
+
+        if (map) {
+            window.setTimeout(async () => {
+                window.kakao.maps.event.trigger(map, 'resize');
+                updateOverlayPosition();
+                await renderRaster(true);
+            }, 120);
+        }
+    }
+
+    function toggleOrientationMode() {
+        return setOrientationMode(!landscapeMode);
+    }
+
+    function syncOrientationModeFromViewport() {
+        const viewportLandscape = window.innerWidth > window.innerHeight;
+        if (viewportLandscape === landscapeMode) return;
+        landscapeMode = viewportLandscape;
+        updateOrientationMode();
     }
 
     function panTransformedMap(deltaX, deltaY) {
@@ -729,9 +738,11 @@
                     const text = createSvgElement('text', {
                         x,
                         y,
+                        class: 'cad-map-label',
                         fill: color,
                         'font-size': 11,
-                        'font-family': 'Malgun Gothic, sans-serif'
+                        'font-family': 'Malgun Gothic, sans-serif',
+                        style: `--cad-label-origin: ${x}px ${y}px`
                     });
                     text.textContent = label.text;
                     fragment.appendChild(text);
@@ -858,8 +869,7 @@
         getElement('recenterMapBtn')?.addEventListener('click', fitToDepot);
         getElement('currentLocationBtn')?.addEventListener('click', showCurrentPosition);
         getElement('detailZoomBtn')?.addEventListener('click', cycleDetailZoom);
-        getElement('rotateMapBtn')?.addEventListener('click', rotateMapStep);
-        getElement('mapCompassBtn')?.addEventListener('click', resetMapRotation);
+        getElement('orientationModeBtn')?.addEventListener('click', toggleOrientationMode);
         getElement('zoomInBtn')?.addEventListener('click', zoomIn);
         getElement('zoomOutBtn')?.addEventListener('click', zoomOut);
         getElement('displaySettingsBtn')?.addEventListener('click', () => {
@@ -885,6 +895,7 @@
         });
         window.addEventListener('resize', async () => {
             if (!map) return;
+            syncOrientationModeFromViewport();
             window.kakao.maps.event.trigger(map, 'resize');
             updateOverlayPosition();
             applyDetailTransform();
@@ -924,6 +935,8 @@
             const results = await Promise.all([loadKakaoMapSdk(), loadManifest()]);
             manifest = results[1];
             canvas = getElement('cadOverlay');
+            landscapeMode = window.innerWidth > window.innerHeight;
+            updateOrientationMode();
             if (!canvas) throw new Error('도면 표시 화면을 준비하지 못했습니다.');
 
             if (!map) {

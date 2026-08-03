@@ -959,6 +959,14 @@ input:checked+.slider:before {
   overflow: visible;
   shape-rendering: geometricPrecision;
   text-rendering: geometricPrecision;
+  --cad-label-inverse-scale: 1;
+  --cad-label-rotation: 0deg;
+}
+
+.cad-map-label {
+  transform: rotate(var(--cad-label-rotation)) scale(var(--cad-label-inverse-scale));
+  transform-box: view-box;
+  transform-origin: var(--cad-label-origin);
 }
 
 .cad-map-overlay.zooming {
@@ -1120,7 +1128,7 @@ input:checked+.slider:before {
   stroke: none;
 }
 
-.map-rotate-button {
+.map-orientation-button {
   position: absolute;
   bottom: 22px;
   left: 14px;
@@ -1138,20 +1146,20 @@ input:checked+.slider:before {
   box-shadow: 0 3px 12px rgba(15, 23, 42, 0.24);
 }
 
-.map-rotate-button:hover {
+.map-orientation-button:hover {
   background: #f8fafc;
 }
 
-.map-rotate-button:active {
+.map-orientation-button:active {
   transform: scale(0.94);
 }
 
-.map-rotate-button.active {
+.map-orientation-button.active {
   background: #276749;
   color: #fff;
 }
 
-.map-rotate-button svg {
+.map-orientation-button svg {
   width: 100%;
   height: 100%;
   fill: none;
@@ -1161,58 +1169,31 @@ input:checked+.slider:before {
   stroke-width: 2.7;
 }
 
-.map-compass {
-  position: absolute;
-  right: 14px;
-  bottom: 80px;
-  z-index: 10;
-  display: grid;
-  width: 48px;
-  height: 48px;
-  margin: 0;
-  padding: 8px;
-  place-items: center;
-  border: 1px solid rgba(15, 23, 42, 0.16);
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.97);
-  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.24);
-}
-
-.map-compass[hidden] {
+.map-orientation-button .orientation-portrait-icon {
   display: none;
 }
 
-.map-compass:hover {
-  background: #f8fafc;
+.map-orientation-button.active .orientation-landscape-icon {
+  display: none;
 }
 
-.map-compass:active {
-  transform: scale(0.94);
+.map-orientation-button.active .orientation-portrait-icon {
+  display: block;
 }
 
-.map-compass svg {
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  fill: none;
-  stroke: #334155;
-  stroke-width: 1.5;
+.map-orientation-button .orientation-home-dot {
+  fill: currentColor;
+  stroke: none;
 }
 
-.map-compass .compass-needle {
-  transform-box: fill-box;
-  transform-origin: center;
-  transition: transform 120ms linear;
+.map-view.landscape-mode .map-orientation-button {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
 }
 
-.map-compass .compass-north {
-  fill: #dc2626;
-  stroke: #991b1b;
-}
-
-.map-compass .compass-south {
-  fill: #f8fafc;
-  stroke: #475569;
+.map-view.landscape-mode .map-orientation-button:active {
+  transform: translateY(-50%) scale(0.94);
 }
 
 .map-location-status {
@@ -1519,14 +1500,9 @@ input:checked+.slider:before {
     bottom: 14px;
   }
 
-  .map-rotate-button {
+  .map-orientation-button {
     bottom: 14px;
     left: 10px;
-  }
-
-  .map-compass {
-    right: 10px;
-    bottom: 72px;
   }
 
   .map-zoom-controls {
