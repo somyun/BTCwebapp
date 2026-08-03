@@ -44,14 +44,14 @@ test('detail zoom cycles beyond the Kakao tile limit and keeps controls fixed', 
     assert.match(styles, /\.map-zoom-controls\s*{[\s\S]*?top: 50%;[\s\S]*?right: 12px;/);
 });
 
-test('orientation control replaces map rotation and centers on the left in landscape mode', () => {
-    assert.match(html, /id="orientationModeBtn"[^>]*class="map-orientation-button"[^>]*aria-pressed="false"/);
+test('device orientation automatically controls landscape layout without an app button', () => {
+    assert.doesNotMatch(html, /id="orientationModeBtn"|class="map-orientation-button"/);
     assert.doesNotMatch(html, /id="rotateMapBtn"|id="mapCompassBtn"/);
     assert.doesNotMatch(mapSource, /detailRotation|rotateMapStep|resetMapRotation/);
-    assert.match(mapSource, /screen\.orientation\.lock\(landscapeMode \? 'landscape' : 'portrait'\)/);
-    assert.match(mapSource, /syncOrientationModeFromViewport\(\)/);
-    assert.match(styles, /\.map-orientation-button\s*{[\s\S]*?bottom: 22px;[\s\S]*?left: 14px;/);
-    assert.doesNotMatch(styles, /\.map-view\.landscape-mode \.map-orientation-button/);
+    assert.doesNotMatch(mapSource, /screen\.orientation\.lock|toggleOrientationMode/);
+    assert.match(mapSource, /syncOrientationFromDevice\(\)/);
+    assert.match(mapSource, /angle === 270[\s\S]*?return 90;[\s\S]*?angle === 90[\s\S]*?return -90;/);
+    assert.doesNotMatch(styles, /\.map-orientation-button/);
     assert.match(styles, /\.map-view\.landscape-mode \.map-type-controls\s*{[\s\S]*?right: auto;[\s\S]*?left: 12px;/);
     assert.match(styles, /\.map-view\.landscape-mode \.map-zoom-controls\s*{[\s\S]*?right: 12px;/);
 });
@@ -61,7 +61,7 @@ test('CAD overlay keeps vector labels upright by mode and constant in detail zoo
     assert.match(mapSource, /createSvgElement\('path'/);
     assert.match(mapSource, /createSvgElement\('text'/);
     assert.match(mapSource, /class: 'cad-map-label'/);
-    assert.match(mapSource, /landscapeMode \? '-90deg' : '0deg'/);
+    assert.match(mapSource, /detectedLabelRotation\(viewportLandscape\)/);
     assert.match(mapSource, /String\(1 \/ detailScale\)/);
     assert.match(mapSource, /'vector-effect': 'non-scaling-stroke'/);
     assert.match(styles, /\.cad-map-label\s*{[\s\S]*?rotate\(var\(--cad-label-rotation\)\) scale\(var\(--cad-label-inverse-scale\)\)/);

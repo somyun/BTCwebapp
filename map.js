@@ -31,7 +31,6 @@
     let pinchFinishTimer = 0;
     let detailScale = 1;
     let detailOffset = { x: 0, y: 0 };
-    let landscapeMode = false;
     let detailPanGesture = null;
     let detailTransitionTimer = 0;
     let detailInteractionLocked = false;
@@ -156,57 +155,35 @@
         };
     }
 
-    function updateOrientationMode() {
+    function normalizedScreenAngle() {
+        const screenAngle = Number(window.screen?.orientation?.angle);
+        if (Number.isFinite(screenAngle)) return ((screenAngle % 360) + 360) % 360;
+
+        const legacyAngle = Number(window.orientation);
+        if (Number.isFinite(legacyAngle)) return ((legacyAngle % 360) + 360) % 360;
+        return null;
+    }
+
+    function detectedLabelRotation(viewportLandscape) {
+        if (!viewportLandscape) return 0;
+        const angle = normalizedScreenAngle();
+        if (angle === 270) return 90;
+        if (angle === 90) return -90;
+        return -90;
+    }
+
+    function syncOrientationFromDevice() {
         const view = getElement('mapView');
-        const button = getElement('orientationModeBtn');
-        view?.classList.toggle('landscape-mode', landscapeMode);
-        if (button) {
-            button.classList.toggle('active', landscapeMode);
-            button.setAttribute('aria-pressed', String(landscapeMode));
-            button.title = landscapeMode ? '세로 모드로 전환' : '가로 모드로 전환';
-            button.setAttribute('aria-label', button.title);
-        }
+        const viewportLandscape = window.innerWidth > window.innerHeight;
+        view?.classList.toggle('landscape-mode', viewportLandscape);
         if (canvas) {
-            const labelRotation = landscapeMode ? '-90deg' : '0deg';
+            const labelRotation = `${detectedLabelRotation(viewportLandscape)}deg`;
             if (canvas.style.setProperty) {
                 canvas.style.setProperty('--cad-label-rotation', labelRotation);
             } else {
                 canvas.style['--cad-label-rotation'] = labelRotation;
             }
         }
-    }
-
-    async function setOrientationMode(nextLandscape, requestDeviceOrientation = true) {
-        landscapeMode = Boolean(nextLandscape);
-        updateOrientationMode();
-
-        if (requestDeviceOrientation && window.screen?.orientation?.lock) {
-            try {
-                await window.screen.orientation.lock(landscapeMode ? 'landscape' : 'portrait');
-            } catch (_error) {
-                // Orientation lock is only available in some installed PWAs/browsers.
-                // The map layout and CAD label orientation still switch immediately.
-            }
-        }
-
-        if (map) {
-            window.setTimeout(async () => {
-                window.kakao.maps.event.trigger(map, 'resize');
-                updateOverlayPosition();
-                await renderRaster(true);
-            }, 120);
-        }
-    }
-
-    function toggleOrientationMode() {
-        return setOrientationMode(!landscapeMode);
-    }
-
-    function syncOrientationModeFromViewport() {
-        const viewportLandscape = window.innerWidth > window.innerHeight;
-        if (viewportLandscape === landscapeMode) return;
-        landscapeMode = viewportLandscape;
-        updateOrientationMode();
     }
 
     function panTransformedMap(deltaX, deltaY) {
@@ -877,7 +854,6 @@
         getElement('mapTypeToggleBtn')?.addEventListener('click', toggleMapType);
         getElement('currentLocationBtn')?.addEventListener('click', showCurrentPosition);
         getElement('detailZoomBtn')?.addEventListener('click', cycleDetailZoom);
-        getElement('orientationModeBtn')?.addEventListener('click', toggleOrientationMode);
         getElement('zoomInBtn')?.addEventListener('click', zoomIn);
         getElement('zoomOutBtn')?.addEventListener('click', zoomOut);
         getElement('displaySettingsBtn')?.addEventListener('click', () => {
@@ -912,11 +888,14 @@
         });
         window.addEventListener('resize', async () => {
             if (!map) return;
-            syncOrientationModeFromViewport();
+            syncOrientationFromDevice();
             window.kakao.maps.event.trigger(map, 'resize');
             updateOverlayPosition();
             applyDetailTransform();
             await renderRaster(true);
+        });
+        window.screen?.orientation?.addEventListener?.('change', () => {
+            window.setTimeout(syncOrientationFromDevice, 0);
         });
         controlsBound = true;
     }
@@ -952,8 +931,7 @@
             const results = await Promise.all([loadKakaoMapSdk(), loadManifest()]);
             manifest = results[1];
             canvas = getElement('cadOverlay');
-            landscapeMode = window.innerWidth > window.innerHeight;
-            updateOrientationMode();
+            syncOrientationFromDevice();
             if (!canvas) throw new Error('도면 표시 화면을 준비하지 못했습니다.');
 
             if (!map) {
