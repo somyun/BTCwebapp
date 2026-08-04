@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <title>ERP 점검 웹앱</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css?v=hopo-cad-13">
+    <link rel="stylesheet" href="style.css?v=hopo-cad-15">
     <meta name="theme-color" content="#ffffff">
     <link rel="manifest" href="./manifest.json">
     <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
@@ -50,13 +50,6 @@
                     <div id="formListStatus" style="margin-top: 5px; font-size: 0.9em;"></div>
                 </div>
 
-                <div class="sidenav-section map-menu-section">
-                    <h3>차량기지 도면</h3>
-                    <button id="openMapBtn" class="map-menu-button" type="button">
-                        지도에서 도면 보기
-                    </button>
-                </div>
-
                 <div class="sidenav-section reset-section">
                     <div class="switch-container">
                         <label class="switch">
@@ -85,15 +78,18 @@
                 <div id="dynamicFormContainer" class="form-section">
                     <h3>측정값 입력 폼</h3>
                     <p id="formMessage">메뉴(☰)를 열어 새 양식을 업로드하거나 기존 양식을 선택해주세요.</p>
-
-                    <!-- Main Static Notification Toggle -->
-                    <div id="mainToggleContainer" class="switch-container" style="max-width:300px; margin: 20px 0;">
-                        <label class="switch">
-                            <input type="checkbox" id="notificationToggleMain">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
                 </div>
+
+                <!-- Main Static Notification Toggle -->
+                <div id="mainToggleContainer" class="switch-container" style="max-width:300px; margin: 20px 0;">
+                    <label class="switch">
+                        <input type="checkbox" id="notificationToggleMain">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <button id="openMapBtn" class="map-menu-button home-map-button" type="button">
+                    기지도면 보기
+                </button>
                 <div class="home-spacer" aria-hidden="true"></div>
             </div>
 
@@ -144,7 +140,7 @@
                         <input id="cadOpacity" type="range" min="20" max="100" value="80">
                     </label>
                     <label class="cad-layer-setting cad-label-setting">
-                        <input id="cadLabelToggle" type="checkbox">
+                        <input id="cadLabelToggle" type="checkbox" checked>
                         <span>문자도 표시</span>
                     </label>
                     <div id="cadLayerList" class="cad-layer-list" aria-label="도면 레이어 목록"></div>
@@ -232,7 +228,7 @@
     <script src="read-adapter.js?v=p2-firestore"></script>
     <script src="production-read.js?v=p2-firestore"></script>
     <script src="auth.js?v=humetro-code-2"></script>
-    <script src="map.js?v=hopo-cad-14"></script>
+    <script src="map.js?v=hopo-cad-15"></script>
     <script src="script.js?v=humetro-code-1"></script>
 </body>
 

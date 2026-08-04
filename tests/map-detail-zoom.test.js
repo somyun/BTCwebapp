@@ -61,7 +61,7 @@ async function createHarness() {
         cadLayerMessage: element(),
         cadLayerList: element(),
         cadOpacity: element({ value: '80' }),
-        cadLabelToggle: element({ checked: false }),
+        cadLabelToggle: element({ checked: true }),
         mapTypeToggleBtn: element(),
         currentLocationBtn: element(),
         displaySettingsBtn: element(),
@@ -327,10 +327,14 @@ test('pinching while device-rotated stays in Kakao map zoom instead of detail zo
     assert.equal(getMap().zoomable, true);
 });
 
-test('detail zoom applies the inverse scale used to keep labels the same size', async () => {
+test('detail zoom compensates label size so it stays visually stable', async () => {
     const { elements } = await createHarness();
     elements.detailZoomBtn.listeners.click();
-    assert.equal(elements.cadOverlay.style['--cad-label-inverse-scale'], '0.5');
+    assert.equal(elements.cadOverlay.style['--cad-label-inverse-scale'], '0.6');
     elements.detailZoomBtn.listeners.click();
-    assert.equal(elements.cadOverlay.style['--cad-label-inverse-scale'], '0.25');
+    assert.equal(elements.cadOverlay.style['--cad-label-inverse-scale'], '0.3');
+    elements.detailZoomBtn.listeners.click();
+    assert.equal(elements.cadOverlay.style['--cad-label-inverse-scale'], '0.15');
+    elements.detailZoomBtn.listeners.click();
+    assert.equal(elements.cadOverlay.style['--cad-label-inverse-scale'], '1');
 });

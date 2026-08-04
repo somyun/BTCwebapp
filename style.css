@@ -867,11 +867,6 @@ input:checked+.slider:before {
   display: none !important;
 }
 
-.map-menu-section {
-  border-top: 1px solid #ddd;
-  padding-top: 18px;
-}
-
 .map-menu-button {
   margin: 0;
   background: #276749;
@@ -879,6 +874,12 @@ input:checked+.slider:before {
 
 .map-menu-button:hover {
   background: #22543d;
+}
+
+.home-map-button {
+  width: 180px;
+  max-width: 100%;
+  margin: 0 0 20px;
 }
 
 .home-spacer {

@@ -19,6 +19,14 @@ test('map controls expose display settings and an icon-only location button', ()
     assert.match(html, /id="cadLayerPanel"[^>]*hidden/);
 });
 
+test('depot map entry is on the home page below notifications and labels default to visible', () => {
+    const sidebar = html.slice(html.indexOf('<nav id="sidenav"'), html.indexOf('</nav>'));
+    assert.doesNotMatch(sidebar, /id="openMapBtn"/);
+    assert.ok(html.indexOf('id="openMapBtn"') > html.indexOf('id="notificationToggleMain"'));
+    assert.match(html, /id="openMapBtn"[^>]*>[\s\S]*?기지도면 보기[\s\S]*?<\/button>/);
+    assert.match(html, /id="cadLabelToggle"[^>]*type="checkbox"[^>]*checked/);
+});
+
 test('display settings button toggles the layer panel accessibly', () => {
     assert.match(mapSource, /panel\.hidden = !willOpen/);
     assert.match(mapSource, /setAttribute\('aria-expanded', String\(willOpen\)\)/);
@@ -60,7 +68,7 @@ test('device orientation automatically rotates the map without an app button', (
     assert.match(styles, /\.map-view\.landscape-mode \.map-zoom-controls\s*{[\s\S]*?right: 12px;/);
 });
 
-test('CAD overlay keeps vector labels upright by mode and constant in detail zoom', () => {
+test('CAD overlay keeps vector labels upright and visually stable in detail zoom', () => {
     assert.match(html, /<svg id="cadOverlay"/);
     assert.match(mapSource, /createSvgElement\('path'/);
     assert.match(mapSource, /createSvgElement\('text'/);
@@ -68,7 +76,8 @@ test('CAD overlay keeps vector labels upright by mode and constant in detail zoo
     assert.match(mapSource, /transform: `rotate\(\$\{-mapRotationDegrees\} \$\{x\} \$\{y\}\)`/);
     assert.match(mapSource, /label\.setAttribute\('transform', `rotate\(\$\{-mapRotationDegrees\}/);
     assert.match(mapSource, /map\.relayout\(\);[\s\S]*?map\.setCenter\(center\);/);
-    assert.match(mapSource, /String\(1 \/ detailScale\)/);
+    assert.match(mapSource, /LABEL_DETAIL_SCALE_COMPENSATION = 1\.2/);
+    assert.match(mapSource, /LABEL_DETAIL_SCALE_COMPENSATION \/ detailScale/);
     assert.match(mapSource, /'vector-effect': 'non-scaling-stroke'/);
     assert.match(styles, /\.cad-map-label\s*{[\s\S]*?font-size: calc\(11px \* var\(--cad-label-inverse-scale\)\)/);
 });

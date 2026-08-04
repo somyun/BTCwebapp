@@ -6,6 +6,7 @@
     const CORE_LAYER_NAMES = new Set(['0', 'SIMPLE', 'CABLE', '신설', '신설1', 'WALL', '전주']);
     const OVERLAY_PADDING_RATIO = 0.015;
     const DETAIL_ZOOM_STEPS = [1, 2, 4, 8];
+    const LABEL_DETAIL_SCALE_COMPENSATION = 1.2;
 
     const layerCache = new Map();
     const selectedLayers = new Set();
@@ -114,7 +115,9 @@
             : '';
 
         if (canvas) {
-            const inverseScale = String(1 / detailScale);
+            const inverseScale = String(detailScale > 1.001
+                ? LABEL_DETAIL_SCALE_COMPENSATION / detailScale
+                : 1);
             if (canvas.style.setProperty) {
                 canvas.style.setProperty('--cad-label-inverse-scale', inverseScale);
             } else {
