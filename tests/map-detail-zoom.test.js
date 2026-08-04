@@ -251,7 +251,7 @@ test('device orientation rotates the map toward the hardware top and keeps label
     assert.equal(elements.mapZoomStage.style.width, '600px');
     assert.equal(elements.mapZoomStage.style.height, '1000px');
     assert.equal(renderedLabel.transform, 'rotate(90 125 240)');
-    assert.equal(getMap().draggable, true);
+    assert.equal(getMap().draggable, false);
     assert.equal(getMap().zoomable, true);
     assert.ok(getMap().relayoutCalls >= 2);
 
@@ -267,6 +267,39 @@ test('device orientation rotates the map toward the hardware top and keeps label
     assert.equal(elements.mapZoomStage.style.transform, '');
     assert.equal(renderedLabel.transform, 'rotate(0 125 240)');
     assert.equal(getMap().draggable, true);
+});
+
+test('dragging while device-rotated follows the visible screen direction', async () => {
+    const { elements, window, windowListeners, getMap } = await createHarness();
+    window.innerWidth = 1000;
+    window.innerHeight = 600;
+    window.screen.orientation.angle = 90;
+    await windowListeners.resize();
+
+    const beforeClockwise = getMap().getCenter();
+    elements.kakaoMap.listeners.touchstart({
+        touches: [{ clientX: 100, clientY: 100 }]
+    });
+    elements.kakaoMap.listeners.touchmove({
+        touches: [{ clientX: 140, clientY: 100 }]
+    });
+    const afterClockwise = getMap().getCenter();
+    assert.ok(afterClockwise.lat > beforeClockwise.lat);
+    assert.equal(afterClockwise.lng, beforeClockwise.lng);
+
+    elements.kakaoMap.listeners.touchend({ touches: [] });
+    window.screen.orientation.angle = 270;
+    await windowListeners.resize();
+    const beforeCounterClockwise = getMap().getCenter();
+    elements.kakaoMap.listeners.touchstart({
+        touches: [{ clientX: 100, clientY: 100 }]
+    });
+    elements.kakaoMap.listeners.touchmove({
+        touches: [{ clientX: 140, clientY: 100 }]
+    });
+    const afterCounterClockwise = getMap().getCenter();
+    assert.ok(afterCounterClockwise.lat < beforeCounterClockwise.lat);
+    assert.equal(afterCounterClockwise.lng, beforeCounterClockwise.lng);
 });
 
 test('pinching while device-rotated stays in Kakao map zoom instead of detail zoom', async () => {
@@ -290,7 +323,7 @@ test('pinching while device-rotated stays in Kakao map zoom instead of detail zo
     assert.match(elements.cadOverlay.style.transform, /scale\(2\)/);
     assert.doesNotMatch(elements.mapZoomStage.style.transform, /scale\(2\)/);
     assert.equal(elements.detailZoomBtn.textContent, '상세확대');
-    assert.equal(getMap().draggable, true);
+    assert.equal(getMap().draggable, false);
     assert.equal(getMap().zoomable, true);
 });
 

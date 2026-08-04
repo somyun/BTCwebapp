@@ -34,7 +34,7 @@
     let mapRotationDegrees = 0;
     let detailPanGesture = null;
     let detailTransitionTimer = 0;
-    let detailInteractionLocked = false;
+    let mapInteractionState = '';
 
     function getElement(id) {
         return document.getElementById(id);
@@ -129,10 +129,12 @@
             }, 240);
         }
 
-        if (map && detailActive !== detailInteractionLocked) {
-            map.setDraggable(!detailActive);
+        const dragLocked = active;
+        const nextInteractionState = `${dragLocked}:${detailActive}`;
+        if (map && nextInteractionState !== mapInteractionState) {
+            map.setDraggable(!dragLocked);
             map.setZoomable(!detailActive);
-            detailInteractionLocked = detailActive;
+            mapInteractionState = nextInteractionState;
         }
         updateZoomControls();
     }
@@ -522,7 +524,7 @@
     function beginPinch(event) {
         if (!canvas) return;
 
-        if (detailTransformActive() && event.touches.length === 1) {
+        if (customTransformActive() && event.touches.length === 1) {
             const touch = event.touches[0];
             detailPanGesture = {
                 x: touch.clientX,
@@ -564,7 +566,7 @@
     }
 
     function updatePinch(event) {
-        if (detailPanGesture && event.touches.length === 1 && detailTransformActive()) {
+        if (detailPanGesture && event.touches.length === 1 && customTransformActive()) {
             const touch = event.touches[0];
             panTransformedMap(
                 touch.clientX - detailPanGesture.x,
@@ -644,7 +646,7 @@
     }
 
     function beginDetailPointerPan(event) {
-        if (!detailTransformActive() || event.pointerType === 'touch' || event.button !== 0) return;
+        if (!customTransformActive() || event.pointerType === 'touch' || event.button !== 0) return;
         const stage = getElement('mapZoomStage');
         detailPanGesture = {
             pointerId: event.pointerId,

@@ -39,7 +39,8 @@ test('detail zoom cycles beyond the Kakao tile limit and keeps controls fixed', 
     assert.match(html, /id="zoomInBtn"[^>]*aria-label="지도 확대"/);
     assert.match(html, /id="zoomOutBtn"[^>]*aria-label="지도 축소"/);
     assert.match(mapSource, /DETAIL_ZOOM_STEPS = \[1, 2, 4, 8\]/);
-    assert.match(mapSource, /map\.setDraggable\(!detailActive\)/);
+    assert.match(mapSource, /map\.setDraggable\(!dragLocked\)/);
+    assert.match(mapSource, /if \(customTransformActive\(\) && event\.touches\.length === 1\)/);
     assert.match(mapSource, /if \(detailTransformActive\(\)\) \{[\s\S]*?mode: 'detail'/);
     assert.doesNotMatch(mapSource, /if \(customTransformActive\(\)\) \{[\s\S]*?mode: 'detail'/);
     assert.match(mapSource, /stage\.style\.transform = active/);
