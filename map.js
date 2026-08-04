@@ -31,6 +31,7 @@
     let pinchFinishTimer = 0;
     let detailScale = 1;
     let detailOffset = { x: 0, y: 0 };
+    let mapRotationDegrees = 0;
     let detailPanGesture = null;
     let detailTransitionTimer = 0;
     let detailInteractionLocked = false;
@@ -44,7 +45,7 @@
     }
 
     function customTransformActive() {
-        return detailScale > 1.001;
+        return detailScale > 1.001 || mapRotationDegrees !== 0;
     }
 
     function clampDetailOffset(scale = detailScale, offset = detailOffset) {
@@ -81,12 +82,30 @@
         if (!stage) return;
 
         const scale = detailScale;
+        const view = getElement('mapView');
+        if (view && mapRotationDegrees !== 0) {
+            const width = Math.max(1, view.clientWidth);
+            const height = Math.max(1, view.clientHeight);
+            stage.style.width = `${height}px`;
+            stage.style.height = `${width}px`;
+            stage.style.left = `${(width - height) / 2}px`;
+            stage.style.top = `${(height - width) / 2}px`;
+            stage.style.right = 'auto';
+            stage.style.bottom = 'auto';
+        } else {
+            stage.style.width = '';
+            stage.style.height = '';
+            stage.style.left = '';
+            stage.style.top = '';
+            stage.style.right = '';
+            stage.style.bottom = '';
+        }
         detailOffset = clampDetailOffset();
         const active = customTransformActive();
         stage.classList.toggle('detail-mode', active);
         stage.classList.toggle('detail-transition', animate);
         stage.style.transform = active
-            ? `translate3d(${detailOffset.x}px, ${detailOffset.y}px, 0) scale(${scale})`
+            ? `translate3d(${detailOffset.x}px, ${detailOffset.y}px, 0) rotate(${mapRotationDegrees}deg) scale(${scale})`
             : '';
 
         if (canvas) {
@@ -149,16 +168,52 @@
 
     function screenDeltaToMapDelta(deltaX, deltaY) {
         const scale = detailScale;
+        const radians = mapRotationDegrees * Math.PI / 180;
+        const cosine = Math.cos(radians);
+        const sine = Math.sin(radians);
         return {
-            x: deltaX / scale,
-            y: deltaY / scale
+            x: ((cosine * deltaX) + (sine * deltaY)) / scale,
+            y: ((-sine * deltaX) + (cosine * deltaY)) / scale
         };
+    }
+
+    function normalizedScreenAngle() {
+        const screenAngle = Number(window.screen?.orientation?.angle);
+        if (Number.isFinite(screenAngle)) return ((screenAngle % 360) + 360) % 360;
+
+        const legacyAngle = Number(window.orientation);
+        if (Number.isFinite(legacyAngle)) return ((legacyAngle % 360) + 360) % 360;
+        return null;
+    }
+
+    function detectedMapRotation(viewportLandscape) {
+        if (!viewportLandscape) return 0;
+        const angle = normalizedScreenAngle();
+        if (angle === 270) return 90;
+        if (angle === 90) return -90;
+        return -90;
+    }
+
+    function updateRenderedLabelRotations() {
+        const labels = canvas?.querySelectorAll?.('.cad-map-label') || [];
+        for (const label of labels) {
+            const x = label.getAttribute('x');
+            const y = label.getAttribute('y');
+            label.setAttribute('transform', `rotate(${-mapRotationDegrees} ${x} ${y})`);
+        }
     }
 
     function syncOrientationFromDevice() {
         const view = getElement('mapView');
         const viewportLandscape = window.innerWidth > window.innerHeight;
         view?.classList.toggle('landscape-mode', viewportLandscape);
+        const nextRotation = detectedMapRotation(viewportLandscape);
+        const rotationChanged = nextRotation !== mapRotationDegrees;
+        mapRotationDegrees = nextRotation;
+        if (rotationChanged) {
+            applyDetailTransform();
+            updateRenderedLabelRotations();
+        }
     }
 
     function panTransformedMap(deltaX, deltaY) {
@@ -702,7 +757,8 @@
                         y,
                         class: 'cad-map-label',
                         fill: color,
-                        'font-family': 'Malgun Gothic, sans-serif'
+                        'font-family': 'Malgun Gothic, sans-serif',
+                        transform: `rotate(${-mapRotationDegrees} ${x} ${y})`
                     });
                     text.textContent = label.text;
                     fragment.appendChild(text);
@@ -868,7 +924,13 @@
             await renderRaster(true);
         });
         window.screen?.orientation?.addEventListener?.('change', () => {
-            window.setTimeout(syncOrientationFromDevice, 0);
+            window.setTimeout(async () => {
+                syncOrientationFromDevice();
+                if (!map) return;
+                window.kakao.maps.event.trigger(map, 'resize');
+                updateOverlayPosition();
+                await renderRaster(true);
+            }, 0);
         });
         controlsBound = true;
     }
