@@ -2,7 +2,11 @@
     'use strict';
 
     const KAKAO_JAVASCRIPT_KEY = '708065ee6e872ac3f158928a61d3252e';
-    const CAD_MANIFEST_URL = './cad-data/hopo/manifest.json';
+    const MAP_SCRIPT_BASE_URL = new URL(
+        '.',
+        document.currentScript?.src || window.location?.href || 'http://localhost/'
+    );
+    const CAD_MANIFEST_URL = new URL('cad-data/hopo/manifest.json', MAP_SCRIPT_BASE_URL).href;
     const CORE_LAYER_NAMES = new Set([
         '0', 'SIMPLE', 'CABLE', '신설', '신설1', 'WALL', '전주',
         'teamA', 'teamB', 'teamC', 'teamD',
