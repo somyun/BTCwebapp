@@ -50,7 +50,7 @@ test('device orientation automatically controls landscape layout without an app 
     assert.doesNotMatch(mapSource, /detailRotation|rotateMapStep|resetMapRotation/);
     assert.doesNotMatch(mapSource, /screen\.orientation\.lock|toggleOrientationMode/);
     assert.match(mapSource, /syncOrientationFromDevice\(\)/);
-    assert.match(mapSource, /angle === 270[\s\S]*?return 90;[\s\S]*?angle === 90[\s\S]*?return -90;/);
+    assert.doesNotMatch(mapSource, /normalizedScreenAngle|detectedLabelRotation|labelRotationDegrees/);
     assert.doesNotMatch(styles, /\.map-orientation-button/);
     assert.match(styles, /\.map-view\.landscape-mode \.map-type-controls\s*{[\s\S]*?right: auto;[\s\S]*?left: 12px;/);
     assert.match(styles, /\.map-view\.landscape-mode \.map-zoom-controls\s*{[\s\S]*?right: 12px;/);
@@ -61,8 +61,7 @@ test('CAD overlay keeps vector labels upright by mode and constant in detail zoo
     assert.match(mapSource, /createSvgElement\('path'/);
     assert.match(mapSource, /createSvgElement\('text'/);
     assert.match(mapSource, /class: 'cad-map-label'/);
-    assert.match(mapSource, /transform: `rotate\(\$\{labelRotationDegrees\} \$\{x\} \$\{y\}\)`/);
-    assert.match(mapSource, /label\.setAttribute\('transform', `rotate\(\$\{labelRotationDegrees\} \$\{x\} \$\{y\}\)`\)/);
+    assert.doesNotMatch(mapSource, /transform: `rotate\(|label\.setAttribute\('transform'/);
     assert.match(mapSource, /String\(1 \/ detailScale\)/);
     assert.match(mapSource, /'vector-effect': 'non-scaling-stroke'/);
     assert.match(styles, /\.cad-map-label\s*{[\s\S]*?font-size: calc\(11px \* var\(--cad-label-inverse-scale\)\)/);

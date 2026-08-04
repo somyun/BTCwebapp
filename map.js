@@ -31,7 +31,6 @@
     let pinchFinishTimer = 0;
     let detailScale = 1;
     let detailOffset = { x: 0, y: 0 };
-    let labelRotationDegrees = 0;
     let detailPanGesture = null;
     let detailTransitionTimer = 0;
     let detailInteractionLocked = false;
@@ -156,43 +155,10 @@
         };
     }
 
-    function normalizedScreenAngle() {
-        const screenAngle = Number(window.screen?.orientation?.angle);
-        if (Number.isFinite(screenAngle)) return ((screenAngle % 360) + 360) % 360;
-
-        const legacyAngle = Number(window.orientation);
-        if (Number.isFinite(legacyAngle)) return ((legacyAngle % 360) + 360) % 360;
-        return null;
-    }
-
-    function detectedLabelRotation(viewportLandscape) {
-        if (!viewportLandscape) return 0;
-        const angle = normalizedScreenAngle();
-        if (angle === 270) return 90;
-        if (angle === 90) return -90;
-        return -90;
-    }
-
-    function updateRenderedLabelRotations() {
-        const labels = canvas?.querySelectorAll?.('.cad-map-label') || [];
-        for (const label of labels) {
-            const x = label.getAttribute('x');
-            const y = label.getAttribute('y');
-            label.setAttribute('transform', `rotate(${labelRotationDegrees} ${x} ${y})`);
-        }
-    }
-
     function syncOrientationFromDevice() {
         const view = getElement('mapView');
         const viewportLandscape = window.innerWidth > window.innerHeight;
         view?.classList.toggle('landscape-mode', viewportLandscape);
-        const nextRotation = detectedLabelRotation(viewportLandscape);
-        const rotationChanged = nextRotation !== labelRotationDegrees;
-        labelRotationDegrees = nextRotation;
-        if (canvas) {
-            canvas.dataset.labelRotation = String(labelRotationDegrees);
-        }
-        if (rotationChanged) updateRenderedLabelRotations();
     }
 
     function panTransformedMap(deltaX, deltaY) {
@@ -736,8 +702,7 @@
                         y,
                         class: 'cad-map-label',
                         fill: color,
-                        'font-family': 'Malgun Gothic, sans-serif',
-                        transform: `rotate(${labelRotationDegrees} ${x} ${y})`
+                        'font-family': 'Malgun Gothic, sans-serif'
                     });
                     text.textContent = label.text;
                     fragment.appendChild(text);
