@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <title>ERP 점검 웹앱</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css?v=hopo-cad-16">
+    <link rel="stylesheet" href="style.css?v=hopo-cad-17">
     <meta name="theme-color" content="#ffffff">
     <link rel="manifest" href="./manifest.json">
     <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
@@ -101,12 +101,31 @@
                 </div>
                 <div id="mapLoading" class="map-loading">지도를 불러오는 중입니다.</div>
 
-                <div class="map-type-controls" aria-label="지도 종류">
-                    <button id="mapTypeToggleBtn" class="active" type="button" aria-pressed="true"
-                        title="일반지도로 전환">위성지도</button>
-                    <button id="displaySettingsBtn" type="button" aria-controls="cadLayerPanel"
-                        aria-expanded="false">표시설정</button>
-                    <button id="detailZoomBtn" type="button" aria-pressed="false">추가확대</button>
+                <div id="mapTopControls" class="map-type-controls" aria-label="지도 기능">
+                    <div id="mapPrimaryControls" class="map-primary-controls">
+                        <button id="mapTypeToggleBtn" class="active" type="button" aria-pressed="true"
+                            title="일반지도로 전환">위성지도</button>
+                        <button id="displaySettingsBtn" type="button" aria-controls="cadLayerPanel"
+                            aria-expanded="false">표시설정</button>
+                        <button id="detailZoomBtn" type="button" aria-pressed="false">추가확대</button>
+                        <button id="mapSearchBtn" class="map-search-open" type="button" aria-label="도면 문자 검색"
+                            title="도면 문자 검색">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <circle cx="10.8" cy="10.8" r="6.2"></circle>
+                                <path d="m15.4 15.4 4.4 4.4"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div id="mapSearchPanel" class="map-search-panel" hidden>
+                        <button id="mapSearchBackBtn" class="map-search-back" type="button"
+                            aria-label="검색 취소">&lt;</button>
+                        <input id="mapSearchInput" type="search" inputmode="search" autocomplete="off"
+                            spellcheck="false" placeholder="도면 문자 검색" aria-label="도면 문자 검색어">
+                    </div>
+                    <section id="mapSearchResults" class="map-search-results" aria-label="도면 문자 검색 결과" hidden>
+                        <p id="mapSearchStatus" class="map-search-status" role="status" aria-live="polite"></p>
+                        <div id="mapSearchList" class="map-search-list"></div>
+                    </section>
                 </div>
 
                 <div class="map-zoom-controls" aria-label="지도 확대 축소">
@@ -228,7 +247,7 @@
     <script src="read-adapter.js?v=p2-firestore"></script>
     <script src="production-read.js?v=p2-firestore"></script>
     <script src="auth.js?v=humetro-code-2"></script>
-    <script src="map.js?v=hopo-cad-16"></script>
+    <script src="map.js?v=hopo-cad-17"></script>
     <script src="script.js?v=humetro-code-1"></script>
 </body>
 

@@ -11,6 +11,7 @@
     const OVERLAY_PADDING_RATIO = 0.015;
     const DETAIL_ZOOM_STEPS = [1, 2];
     const LABEL_DETAIL_SCALE_COMPENSATION = 1.2;
+    const SEARCH_RESULT_LIMIT = 100;
 
     const layerCache = new Map();
     const selectedLayers = new Set();
@@ -40,6 +41,11 @@
     let detailPanGesture = null;
     let detailTransitionTimer = 0;
     let mapInteractionState = '';
+    let searchIndexPromise = null;
+    let searchMarker = null;
+    let searchDebounceTimer = 0;
+    let searchRequestSerial = 0;
+    let activeSearchResults = [];
 
     function getElement(id) {
         return document.getElementById(id);
@@ -374,6 +380,201 @@
         });
         layerCache.set(layer.id, request);
         return request;
+    }
+
+    function normalizedSearchText(value) {
+        return String(value || '').normalize('NFKC').trim().toLocaleLowerCase('ko-KR');
+    }
+
+    function setSearchStatus(text, isError = false) {
+        const status = getElement('mapSearchStatus');
+        if (!status) return;
+        status.textContent = text;
+        status.classList.toggle('error', isError);
+    }
+
+    function clearSearchResults() {
+        activeSearchResults = [];
+        getElement('mapSearchList')?.replaceChildren();
+    }
+
+    function buildSearchIndex() {
+        if (searchIndexPromise) return searchIndexPromise;
+
+        searchIndexPromise = Promise.all(manifest.layers.map(async (layerInfo) => {
+            try {
+                const layer = await loadLayer(layerInfo);
+                return (Array.isArray(layer.labels) ? layer.labels : []).flatMap((label) => {
+                    const text = String(label.text || '').trim();
+                    const position = Array.isArray(label.position) ? label.position : null;
+                    const normalized = normalizedSearchText(text);
+                    if (!normalized || !position || position.length < 2) return [];
+                    return [{
+                        text,
+                        normalized,
+                        layerName: layerInfo.name,
+                        position: [Number(position[0]), Number(position[1])]
+                    }];
+                });
+            } catch (error) {
+                console.warn(`Search index skipped layer ${layerInfo.name}:`, error);
+                return [];
+            }
+        })).then((groups) => groups.flat());
+
+        return searchIndexPromise;
+    }
+
+    function matchingSearchResults(index, query) {
+        const normalizedQuery = normalizedSearchText(query);
+        if (!normalizedQuery) return { total: 0, results: [] };
+
+        const matches = [];
+        for (const entry of index) {
+            const matchAt = entry.normalized.indexOf(normalizedQuery);
+            if (matchAt < 0) continue;
+            matches.push({
+                ...entry,
+                score: entry.normalized === normalizedQuery ? 0 : matchAt === 0 ? 1 : 2
+            });
+        }
+        matches.sort((first, second) => first.score - second.score
+            || first.text.localeCompare(second.text, 'ko-KR', { numeric: true })
+            || first.layerName.localeCompare(second.layerName, 'ko-KR'));
+        return {
+            total: matches.length,
+            results: matches.slice(0, SEARCH_RESULT_LIMIT)
+        };
+    }
+
+    function selectSearchResult(result) {
+        if (!map || !result) return;
+        resetViewTransform(true);
+        const [longitude, latitude] = result.position;
+        const position = new window.kakao.maps.LatLng(latitude, longitude);
+        searchMarker?.setMap?.(null);
+        searchMarker = new window.kakao.maps.Marker({
+            map,
+            position,
+            title: result.text
+        });
+        if (map.getLevel() > 2) map.setLevel(2, { animate: true });
+        map.panTo(position);
+        getElement('mapSearchResults').hidden = true;
+        setLocationStatus(`검색 위치: ${result.text} · ${result.layerName}`, 'ready');
+    }
+
+    function renderSearchResults(resultSet) {
+        const resultPanel = getElement('mapSearchResults');
+        const resultList = getElement('mapSearchList');
+        if (!resultPanel || !resultList) return;
+
+        activeSearchResults = resultSet.results;
+        const fragment = document.createDocumentFragment();
+        for (let index = 0; index < activeSearchResults.length; index += 1) {
+            const result = activeSearchResults[index];
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'map-search-result';
+
+            const title = document.createElement('span');
+            title.className = 'map-search-result-title';
+            title.textContent = result.text;
+
+            const meta = document.createElement('span');
+            meta.className = 'map-search-result-meta';
+            meta.textContent = `${result.layerName} · ${index + 1}번째 결과`;
+
+            button.append(title, meta);
+            button.addEventListener('click', () => selectSearchResult(result));
+            fragment.appendChild(button);
+        }
+        resultList.replaceChildren(fragment);
+        resultPanel.hidden = false;
+
+        if (resultSet.total === 0) {
+            setSearchStatus('검색 결과가 없습니다.');
+        } else if (resultSet.total > resultSet.results.length) {
+            setSearchStatus(`전체 ${resultSet.total.toLocaleString()}건 중 ${resultSet.results.length}건을 표시합니다.`);
+        } else {
+            setSearchStatus(`${resultSet.total.toLocaleString()}건을 찾았습니다.`);
+        }
+    }
+
+    async function performTextSearch() {
+        const input = getElement('mapSearchInput');
+        const query = String(input?.value || '').trim();
+        const requestSerial = ++searchRequestSerial;
+        clearSearchResults();
+
+        if (!query) {
+            getElement('mapSearchResults').hidden = false;
+            setSearchStatus('검색어를 입력하세요.');
+            return;
+        }
+
+        getElement('mapSearchResults').hidden = false;
+        setSearchStatus('도면 문자를 검색하고 있습니다.');
+        try {
+            const index = await buildSearchIndex();
+            if (requestSerial !== searchRequestSerial) return;
+            renderSearchResults(matchingSearchResults(index, query));
+        } catch (error) {
+            console.error('CAD text search failed:', error);
+            if (requestSerial === searchRequestSerial) {
+                setSearchStatus('검색 데이터를 불러오지 못했습니다.', true);
+            }
+        }
+    }
+
+    function scheduleTextSearch() {
+        activeSearchResults = [];
+        window.clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = window.setTimeout(performTextSearch, 140);
+    }
+
+    function closeTextSearch() {
+        window.clearTimeout(searchDebounceTimer);
+        searchRequestSerial += 1;
+        clearSearchResults();
+        const controls = getElement('mapTopControls');
+        const primary = getElement('mapPrimaryControls');
+        const panel = getElement('mapSearchPanel');
+        const results = getElement('mapSearchResults');
+        const input = getElement('mapSearchInput');
+        controls?.classList.remove('search-active');
+        if (primary) primary.hidden = false;
+        if (panel) panel.hidden = true;
+        if (results) results.hidden = true;
+        if (input) input.value = '';
+    }
+
+    function openTextSearch() {
+        const controls = getElement('mapTopControls');
+        const primary = getElement('mapPrimaryControls');
+        const panel = getElement('mapSearchPanel');
+        const results = getElement('mapSearchResults');
+        const input = getElement('mapSearchInput');
+        const layerPanel = getElement('cadLayerPanel');
+        const settingsButton = getElement('displaySettingsBtn');
+
+        if (layerPanel) layerPanel.hidden = true;
+        settingsButton?.classList.remove('active');
+        settingsButton?.setAttribute('aria-expanded', 'false');
+        controls?.classList.add('search-active');
+        if (primary) primary.hidden = true;
+        if (panel) panel.hidden = false;
+        if (results) results.hidden = false;
+        clearSearchResults();
+        setSearchStatus('검색 데이터를 준비하고 있습니다.');
+        input?.focus();
+
+        buildSearchIndex().then(() => {
+            if (!String(input?.value || '').trim()) setSearchStatus('검색어를 입력하세요.');
+        }).catch((error) => {
+            console.error('CAD search index initialization failed:', error);
+            setSearchStatus('검색 데이터를 불러오지 못했습니다.', true);
+        });
     }
 
     function setMapType(type) {
@@ -935,6 +1136,17 @@
         getElement('detailZoomBtn')?.addEventListener('click', cycleDetailZoom);
         getElement('zoomInBtn')?.addEventListener('click', zoomIn);
         getElement('zoomOutBtn')?.addEventListener('click', zoomOut);
+        getElement('mapSearchBtn')?.addEventListener('click', openTextSearch);
+        getElement('mapSearchBackBtn')?.addEventListener('click', closeTextSearch);
+        getElement('mapSearchInput')?.addEventListener('input', scheduleTextSearch);
+        getElement('mapSearchInput')?.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeTextSearch();
+            } else if (event.key === 'Enter' && activeSearchResults.length === 1) {
+                event.preventDefault();
+                selectSearchResult(activeSearchResults[0]);
+            }
+        });
         getElement('displaySettingsBtn')?.addEventListener('click', () => {
             const panel = getElement('cadLayerPanel');
             const button = getElement('displaySettingsBtn');
