@@ -1501,3 +1501,43 @@ input:checked+.slider:before {
     max-height: 150px;
   }
 }
+
+@media (orientation: landscape) and (max-height: 720px) {
+  .map-view.landscape-mode .cad-layer-panel:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    top: 60px;
+    bottom: 8px;
+    left: 12px;
+    width: min(360px, calc(100% - 24px));
+    max-height: none;
+    padding: 10px;
+  }
+
+  .map-view.landscape-mode .cad-layer-heading {
+    margin-bottom: 4px;
+  }
+
+  .map-view.landscape-mode .cad-layer-actions {
+    margin-bottom: 4px;
+  }
+
+  .map-view.landscape-mode .cad-layer-setting {
+    margin: 3px 0;
+  }
+
+  .map-view.landscape-mode .cad-layer-list {
+    flex: 1 1 auto;
+    min-height: 64px;
+    max-height: none;
+    margin-top: 4px;
+    padding-bottom: 12px;
+    scroll-padding-bottom: 12px;
+  }
+
+  .map-view.landscape-mode .cad-layer-panel p {
+    margin-top: 4px;
+    font-size: 11px;
+    line-height: 1.25;
+  }
+}

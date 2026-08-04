@@ -190,7 +190,7 @@ async function createHarness() {
     return { elements, documentListeners, orientationListeners, renderedLabel, window, windowListeners, getMap: () => mapInstance };
 }
 
-test('detail button cycles 2x, 4x, 8x and restores normal map interaction', async () => {
+test('additional zoom toggles 2x and restores normal map interaction', async () => {
     const { elements, getMap } = await createHarness();
     const click = elements.detailZoomBtn.listeners.click;
 
@@ -199,10 +199,6 @@ test('detail button cycles 2x, 4x, 8x and restores normal map interaction', asyn
     assert.match(elements.mapZoomStage.style.transform, /scale\(2\)/);
     assert.equal(getMap().draggable, false);
 
-    click();
-    assert.match(elements.mapZoomStage.style.transform, /scale\(4\)/);
-    click();
-    assert.match(elements.mapZoomStage.style.transform, /scale\(8\)/);
     click();
     assert.equal(elements.mapZoomStage.style.transform, '');
     assert.equal(getMap().draggable, true);
@@ -302,7 +298,7 @@ test('dragging while device-rotated follows the visible screen direction', async
     assert.equal(afterCounterClockwise.lng, beforeCounterClockwise.lng);
 });
 
-test('pinching while device-rotated stays in Kakao map zoom instead of detail zoom', async () => {
+test('pinching while device-rotated keeps the CAD preview aligned to the rotated pinch center', async () => {
     const { elements, window, windowListeners, getMap } = await createHarness();
     window.innerWidth = 1000;
     window.innerHeight = 600;
@@ -316,25 +312,40 @@ test('pinching while device-rotated stays in Kakao map zoom instead of detail zo
     });
     elements.kakaoMap.listeners.touchmove({
         touches: [
-            { clientX: 50, clientY: 100 },
-            { clientX: 250, clientY: 100 }
+            { clientX: 70, clientY: 100 },
+            { clientX: 270, clientY: 100 }
         ]
     });
-    assert.match(elements.cadOverlay.style.transform, /scale\(2\)/);
+    assert.equal(elements.cadOverlay.style.transform, 'translate3d(0px, 20px, 0) scale(2)');
     assert.doesNotMatch(elements.mapZoomStage.style.transform, /scale\(2\)/);
-    assert.equal(elements.detailZoomBtn.textContent, '상세확대');
+    assert.equal(elements.detailZoomBtn.textContent, '추가확대');
     assert.equal(getMap().draggable, false);
     assert.equal(getMap().zoomable, true);
+
+    const counterClockwise = await createHarness();
+    counterClockwise.window.innerWidth = 1000;
+    counterClockwise.window.innerHeight = 600;
+    counterClockwise.window.screen.orientation.angle = 270;
+    await counterClockwise.windowListeners.resize();
+    counterClockwise.elements.kakaoMap.listeners.touchstart({
+        touches: [
+            { clientX: 100, clientY: 100 },
+            { clientX: 200, clientY: 100 }
+        ]
+    });
+    counterClockwise.elements.kakaoMap.listeners.touchmove({
+        touches: [
+            { clientX: 70, clientY: 100 },
+            { clientX: 270, clientY: 100 }
+        ]
+    });
+    assert.equal(counterClockwise.elements.cadOverlay.style.transform, 'translate3d(0px, -20px, 0) scale(2)');
 });
 
 test('detail zoom compensates label size so it stays visually stable', async () => {
     const { elements } = await createHarness();
     elements.detailZoomBtn.listeners.click();
     assert.equal(elements.cadOverlay.style['--cad-label-inverse-scale'], '0.6');
-    elements.detailZoomBtn.listeners.click();
-    assert.equal(elements.cadOverlay.style['--cad-label-inverse-scale'], '0.3');
-    elements.detailZoomBtn.listeners.click();
-    assert.equal(elements.cadOverlay.style['--cad-label-inverse-scale'], '0.15');
     elements.detailZoomBtn.listeners.click();
     assert.equal(elements.cadOverlay.style['--cad-label-inverse-scale'], '1');
 });

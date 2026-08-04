@@ -3,9 +3,13 @@
 
     const KAKAO_JAVASCRIPT_KEY = '708065ee6e872ac3f158928a61d3252e';
     const CAD_MANIFEST_URL = './cad-data/hopo/manifest.json';
-    const CORE_LAYER_NAMES = new Set(['0', 'SIMPLE', 'CABLE', '신설', '신설1', 'WALL', '전주']);
+    const CORE_LAYER_NAMES = new Set([
+        '0', 'SIMPLE', 'CABLE', '신설', '신설1', 'WALL', '전주',
+        'teamA', 'teamB', 'teamC', 'teamD',
+        'TEAM_A', 'TEAM_B', 'TEAM_C', 'TEAM_D'
+    ]);
     const OVERLAY_PADDING_RATIO = 0.015;
-    const DETAIL_ZOOM_STEPS = [1, 2, 4, 8];
+    const DETAIL_ZOOM_STEPS = [1, 2];
     const LABEL_DETAIL_SCALE_COMPENSATION = 1.2;
 
     const layerCache = new Map();
@@ -71,7 +75,7 @@
             const displayScale = Number.isInteger(detailScale)
                 ? detailScale.toFixed(0)
                 : detailScale.toFixed(1);
-            detailButton.textContent = detailActive ? `상세 ${displayScale}×` : '상세확대';
+            detailButton.textContent = detailActive ? `추가확대 ${displayScale}×` : '추가확대';
             detailButton.classList.toggle('active', detailActive);
             detailButton.setAttribute('aria-pressed', String(detailActive));
         }
@@ -178,12 +182,48 @@
 
     function screenDeltaToMapDelta(deltaX, deltaY) {
         const scale = detailScale;
+        const delta = screenVectorToStageVector(deltaX, deltaY);
+        return {
+            x: delta.x / scale,
+            y: delta.y / scale
+        };
+    }
+
+    function screenVectorToStageVector(deltaX, deltaY) {
         const radians = mapRotationDegrees * Math.PI / 180;
         const cosine = Math.cos(radians);
         const sine = Math.sin(radians);
+        const x = (cosine * deltaX) + (sine * deltaY);
+        const y = (-sine * deltaX) + (cosine * deltaY);
         return {
-            x: ((cosine * deltaX) + (sine * deltaY)) / scale,
-            y: ((-sine * deltaX) + (cosine * deltaY)) / scale
+            x: Math.abs(x) < 1e-9 ? 0 : x,
+            y: Math.abs(y) < 1e-9 ? 0 : y
+        };
+    }
+
+    function screenPointToStagePoint(point) {
+        const view = getElement('mapView');
+        const rect = view?.getBoundingClientRect?.();
+        if (!view || !rect) return { ...point };
+        const screenCenterX = rect.left + (rect.width / 2);
+        const screenCenterY = rect.top + (rect.height / 2);
+        const delta = screenVectorToStageVector(
+            point.x - screenCenterX,
+            point.y - screenCenterY
+        );
+        const stageWidth = mapRotationDegrees === 0 ? view.clientWidth : view.clientHeight;
+        const stageHeight = mapRotationDegrees === 0 ? view.clientHeight : view.clientWidth;
+        return {
+            x: (stageWidth / 2) + delta.x,
+            y: (stageHeight / 2) + delta.y
+        };
+    }
+
+    function screenPointToCanvasPoint(point) {
+        const stagePoint = screenPointToStagePoint(point);
+        return {
+            x: stagePoint.x - (Number.parseFloat(canvas?.style?.left) || 0),
+            y: stagePoint.y - (Number.parseFloat(canvas?.style?.top) || 0)
         };
     }
 
@@ -249,7 +289,7 @@
     function cycleDetailZoom() {
         if (!map) return;
         if (map.getLevel() !== minimumMapLevel()) map.setLevel(minimumMapLevel());
-        const next = detailScale < 1.5 ? 2 : detailScale < 3 ? 4 : detailScale < 6 ? 8 : 1;
+        const next = detailScale < 1.5 ? 2 : 1;
         setDetailScale(next, null, true);
     }
 
@@ -257,8 +297,7 @@
         if (!map) return;
         const level = map.getLevel();
         if (detailScale > 1.001 || level <= minimumMapLevel()) {
-            const next = detailScale < 1.5 ? 2 : detailScale < 3 ? 4 : 8;
-            setDetailScale(next, null, true);
+            setDetailScale(2, null, true);
             return;
         }
         map.setLevel(level - 1, { animate: true });
@@ -267,8 +306,7 @@
     function zoomOut() {
         if (!map) return;
         if (detailScale > 1.001) {
-            const next = detailScale > 6 ? 4 : detailScale > 3 ? 2 : 1;
-            setDetailScale(next, null, true);
+            setDetailScale(1, null, true);
             return;
         }
         map.setLevel(Math.min(14, map.getLevel() + 1), { animate: true });
@@ -556,15 +594,16 @@
             return;
         }
 
-        const canvasRect = canvas.getBoundingClientRect();
+        const canvasMidpoint = screenPointToCanvasPoint(midpoint);
         pinchGesture = {
             mode: 'map',
             distance: Math.max(1, touchDistance(first, second)),
-            midpoint
+            midpoint,
+            stageMidpoint: screenPointToStagePoint(midpoint)
         };
         canvas.classList.add('pinching');
         canvas.classList.remove('zooming');
-        canvas.style.transformOrigin = `${midpoint.x - canvasRect.left}px ${midpoint.y - canvasRect.top}px`;
+        canvas.style.transformOrigin = `${canvasMidpoint.x}px ${canvasMidpoint.y}px`;
         canvas.style.transform = 'translate3d(0, 0, 0) scale(1)';
     }
 
@@ -603,8 +642,9 @@
         }
 
         const scale = Math.max(0.25, Math.min(4, distanceRatio));
-        const translateX = midpoint.x - pinchGesture.midpoint.x;
-        const translateY = midpoint.y - pinchGesture.midpoint.y;
+        const stageMidpoint = screenPointToStagePoint(midpoint);
+        const translateX = stageMidpoint.x - pinchGesture.stageMidpoint.x;
+        const translateY = stageMidpoint.y - pinchGesture.stageMidpoint.y;
         canvas.style.transform = `translate3d(${translateX}px, ${translateY}px, 0) scale(${scale})`;
     }
 
