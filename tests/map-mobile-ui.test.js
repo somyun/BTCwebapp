@@ -44,13 +44,14 @@ test('detail zoom cycles beyond the Kakao tile limit and keeps controls fixed', 
     assert.match(styles, /\.map-zoom-controls\s*{[\s\S]*?top: 50%;[\s\S]*?right: 12px;/);
 });
 
-test('device orientation automatically controls landscape layout without an app button', () => {
+test('device orientation automatically rotates the map without an app button', () => {
     assert.doesNotMatch(html, /id="orientationModeBtn"|class="map-orientation-button"/);
     assert.doesNotMatch(html, /id="rotateMapBtn"|id="mapCompassBtn"/);
     assert.doesNotMatch(mapSource, /detailRotation|rotateMapStep|resetMapRotation/);
     assert.doesNotMatch(mapSource, /screen\.orientation\.lock|toggleOrientationMode/);
     assert.match(mapSource, /syncOrientationFromDevice\(\)/);
-    assert.doesNotMatch(mapSource, /normalizedScreenAngle|detectedLabelRotation|labelRotationDegrees/);
+    assert.match(mapSource, /detectedMapRotation\(viewportLandscape\)/);
+    assert.match(mapSource, /rotate\(\$\{mapRotationDegrees\}deg\)/);
     assert.doesNotMatch(styles, /\.map-orientation-button/);
     assert.match(styles, /\.map-view\.landscape-mode \.map-type-controls\s*{[\s\S]*?right: auto;[\s\S]*?left: 12px;/);
     assert.match(styles, /\.map-view\.landscape-mode \.map-zoom-controls\s*{[\s\S]*?right: 12px;/);
@@ -61,7 +62,8 @@ test('CAD overlay keeps vector labels upright by mode and constant in detail zoo
     assert.match(mapSource, /createSvgElement\('path'/);
     assert.match(mapSource, /createSvgElement\('text'/);
     assert.match(mapSource, /class: 'cad-map-label'/);
-    assert.doesNotMatch(mapSource, /transform: `rotate\(|label\.setAttribute\('transform'/);
+    assert.match(mapSource, /transform: `rotate\(\$\{-mapRotationDegrees\} \$\{x\} \$\{y\}\)`/);
+    assert.match(mapSource, /label\.setAttribute\('transform', `rotate\(\$\{-mapRotationDegrees\}/);
     assert.match(mapSource, /String\(1 \/ detailScale\)/);
     assert.match(mapSource, /'vector-effect': 'non-scaling-stroke'/);
     assert.match(styles, /\.cad-map-label\s*{[\s\S]*?font-size: calc\(11px \* var\(--cad-label-inverse-scale\)\)/);
