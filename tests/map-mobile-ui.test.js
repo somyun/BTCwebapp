@@ -39,7 +39,9 @@ test('detail zoom cycles beyond the Kakao tile limit and keeps controls fixed', 
     assert.match(html, /id="zoomInBtn"[^>]*aria-label="지도 확대"/);
     assert.match(html, /id="zoomOutBtn"[^>]*aria-label="지도 축소"/);
     assert.match(mapSource, /DETAIL_ZOOM_STEPS = \[1, 2, 4, 8\]/);
-    assert.match(mapSource, /map\.setDraggable\(!active\)/);
+    assert.match(mapSource, /map\.setDraggable\(!detailActive\)/);
+    assert.match(mapSource, /if \(detailTransformActive\(\)\) \{[\s\S]*?mode: 'detail'/);
+    assert.doesNotMatch(mapSource, /if \(customTransformActive\(\)\) \{[\s\S]*?mode: 'detail'/);
     assert.match(mapSource, /stage\.style\.transform = active/);
     assert.match(styles, /\.map-zoom-controls\s*{[\s\S]*?top: 50%;[\s\S]*?right: 12px;/);
 });
@@ -64,6 +66,7 @@ test('CAD overlay keeps vector labels upright by mode and constant in detail zoo
     assert.match(mapSource, /class: 'cad-map-label'/);
     assert.match(mapSource, /transform: `rotate\(\$\{-mapRotationDegrees\} \$\{x\} \$\{y\}\)`/);
     assert.match(mapSource, /label\.setAttribute\('transform', `rotate\(\$\{-mapRotationDegrees\}/);
+    assert.match(mapSource, /map\.relayout\(\);[\s\S]*?map\.setCenter\(center\);/);
     assert.match(mapSource, /String\(1 \/ detailScale\)/);
     assert.match(mapSource, /'vector-effect': 'non-scaling-stroke'/);
     assert.match(styles, /\.cad-map-label\s*{[\s\S]*?font-size: calc\(11px \* var\(--cad-label-inverse-scale\)\)/);

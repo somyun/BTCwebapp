@@ -82,6 +82,7 @@ async function createHarness() {
             this.draggable = true;
             this.zoomable = true;
             this.center = new LatLng(35, 129);
+            this.relayoutCalls = 0;
         }
         setMapTypeId() {}
         setBounds() {}
@@ -94,7 +95,7 @@ async function createHarness() {
         setCenter(center) { this.center = center; mapEvents.center_changed?.(); }
         setDraggable(value) { this.draggable = value; }
         setZoomable(value) { this.zoomable = value; }
-        relayout() {}
+        relayout() { this.relayoutCalls += 1; }
         getProjection() {
             return {
                 containerPointFromCoords: (latLng) => ({
@@ -250,7 +251,9 @@ test('device orientation rotates the map toward the hardware top and keeps label
     assert.equal(elements.mapZoomStage.style.width, '600px');
     assert.equal(elements.mapZoomStage.style.height, '1000px');
     assert.equal(renderedLabel.transform, 'rotate(90 125 240)');
-    assert.equal(getMap().draggable, false);
+    assert.equal(getMap().draggable, true);
+    assert.equal(getMap().zoomable, true);
+    assert.ok(getMap().relayoutCalls >= 2);
 
     window.screen.orientation.angle = 270;
     await windowListeners.resize();
@@ -266,21 +269,29 @@ test('device orientation rotates the map toward the hardware top and keeps label
     assert.equal(getMap().draggable, true);
 });
 
-test('dragging while device-rotated pans the Kakao map in transformed coordinates', async () => {
+test('pinching while device-rotated stays in Kakao map zoom instead of detail zoom', async () => {
     const { elements, window, windowListeners, getMap } = await createHarness();
     window.innerWidth = 1000;
     window.innerHeight = 600;
     window.screen.orientation.angle = 90;
     await windowListeners.resize();
-    const before = getMap().getCenter();
-    const pointer = {
-        pointerType: 'mouse', pointerId: 7, button: 0,
-        clientX: 100, clientY: 100, preventDefault() {}
-    };
-    elements.mapZoomStage.listeners.pointerdown(pointer);
-    elements.mapZoomStage.listeners.pointermove({ ...pointer, clientX: 140 });
-    const after = getMap().getCenter();
-    assert.notDeepEqual({ lat: after.lat, lng: after.lng }, { lat: before.lat, lng: before.lng });
+    elements.kakaoMap.listeners.touchstart({
+        touches: [
+            { clientX: 100, clientY: 100 },
+            { clientX: 200, clientY: 100 }
+        ]
+    });
+    elements.kakaoMap.listeners.touchmove({
+        touches: [
+            { clientX: 50, clientY: 100 },
+            { clientX: 250, clientY: 100 }
+        ]
+    });
+    assert.match(elements.cadOverlay.style.transform, /scale\(2\)/);
+    assert.doesNotMatch(elements.mapZoomStage.style.transform, /scale\(2\)/);
+    assert.equal(elements.detailZoomBtn.textContent, '상세확대');
+    assert.equal(getMap().draggable, true);
+    assert.equal(getMap().zoomable, true);
 });
 
 test('detail zoom applies the inverse scale used to keep labels the same size', async () => {

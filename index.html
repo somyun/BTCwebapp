@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <title>ERP 점검 웹앱</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css?v=hopo-cad-12">
+    <link rel="stylesheet" href="style.css?v=hopo-cad-13">
     <meta name="theme-color" content="#ffffff">
     <link rel="manifest" href="./manifest.json">
     <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
@@ -159,9 +159,12 @@
             <h2 id="mapAuthTitle">도면 지도 로그인</h2>
             <p>부산교통공사 이메일로 받은 6자리 인증코드를 입력하세요. 인증은 이 브라우저 또는 PWA에 유지됩니다.</p>
             <label class="map-auth-field" for="mapAuthEmail">
-                <span>부산교통공사 이메일</span>
-                <input id="mapAuthEmail" type="email" inputmode="email" autocomplete="email"
-                    placeholder="name@humetro.busan.kr">
+                <span>부산교통공사 이메일 아이디</span>
+                <span class="map-auth-email-entry">
+                    <input id="mapAuthEmail" type="text" inputmode="text" autocomplete="username"
+                        autocapitalize="none" spellcheck="false" placeholder="아이디">
+                    <span class="map-auth-email-domain" aria-hidden="true">@humetro.busan.kr</span>
+                </span>
             </label>
             <button id="mapAuthSendCodeBtn" type="button">인증코드 받기</button>
             <div id="mapAuthCodeSection" hidden>
@@ -228,8 +231,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <script src="read-adapter.js?v=p2-firestore"></script>
     <script src="production-read.js?v=p2-firestore"></script>
-    <script src="auth.js?v=humetro-code-1"></script>
-    <script src="map.js?v=hopo-cad-12"></script>
+    <script src="auth.js?v=humetro-code-2"></script>
+    <script src="map.js?v=hopo-cad-13"></script>
     <script src="script.js?v=humetro-code-1"></script>
 </body>
 

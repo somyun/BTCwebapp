@@ -24,6 +24,19 @@
         return String(value || '').trim().toLowerCase();
     }
 
+    function emailIdFromAddress(value) {
+        const email = normalizedEmail(value);
+        return email.endsWith(ALLOWED_DOMAIN)
+            ? email.slice(0, -ALLOWED_DOMAIN.length)
+            : email;
+    }
+
+    function addressFromEmailId(value) {
+        const emailId = normalizedEmail(value);
+        if (!/^[a-z0-9._%+-]+$/.test(emailId)) return '';
+        return `${emailId}${ALLOWED_DOMAIN}`;
+    }
+
     function emailFromUser(user) {
         if (user?.email) return normalizedEmail(user.email);
         if (user?.uid?.startsWith(HUMETRO_UID_PREFIX)) {
@@ -87,7 +100,7 @@
         if (!overlay || !email) return Promise.resolve(false);
         overlay.hidden = false;
         pendingEmail = '';
-        email.value = emailFromUser(currentUser);
+        email.value = emailIdFromAddress(emailFromUser(currentUser));
         if (code) code.value = '';
         if (codeSection) codeSection.hidden = true;
         setMessage('');
@@ -97,9 +110,9 @@
 
     async function requestCode() {
         const { email, send, codeSection, code } = elements();
-        const value = normalizedEmail(email?.value);
-        if (!value.endsWith(ALLOWED_DOMAIN)) {
-            setMessage('부산교통공사(@humetro.busan.kr) 이메일을 입력해 주세요.', true);
+        const value = addressFromEmailId(email?.value);
+        if (!value) {
+            setMessage('부산교통공사 이메일 아이디를 입력해 주세요.', true);
             email?.focus();
             return;
         }
@@ -110,7 +123,7 @@
             const result = await callAuthApi('requestMapAuthCode', { email: value });
             if (!result.success) throw new Error(result.code || 'REQUEST_FAILED');
             pendingEmail = value;
-            if (email) email.value = value;
+            if (email) email.value = emailIdFromAddress(value);
             if (codeSection) codeSection.hidden = false;
             setMessage('인증코드를 발송했습니다. 메일의 6자리 숫자를 입력하세요.');
             code?.focus();
@@ -128,7 +141,7 @@
 
     async function verifyCode() {
         const { email, code, verify } = elements();
-        const value = normalizedEmail(email?.value);
+        const value = addressFromEmailId(email?.value);
         const codeValue = String(code?.value || '').replace(/\D/g, '').slice(0, 6);
         if (!pendingEmail || value !== pendingEmail) {
             setMessage('이메일이 변경되었습니다. 인증코드를 다시 받아 주세요.', true);
