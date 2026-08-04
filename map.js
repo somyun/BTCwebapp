@@ -48,6 +48,10 @@
         return detailScale > 1.001 || mapRotationDegrees !== 0;
     }
 
+    function detailTransformActive() {
+        return detailScale > 1.001;
+    }
+
     function clampDetailOffset(scale = detailScale, offset = detailOffset) {
         const view = getElement('mapView');
         if (!view || scale <= 1) return { x: 0, y: 0 };
@@ -102,7 +106,8 @@
         }
         detailOffset = clampDetailOffset();
         const active = customTransformActive();
-        stage.classList.toggle('detail-mode', active);
+        const detailActive = detailTransformActive();
+        stage.classList.toggle('detail-mode', detailActive);
         stage.classList.toggle('detail-transition', animate);
         stage.style.transform = active
             ? `translate3d(${detailOffset.x}px, ${detailOffset.y}px, 0) rotate(${mapRotationDegrees}deg) scale(${scale})`
@@ -124,10 +129,10 @@
             }, 240);
         }
 
-        if (map && active !== detailInteractionLocked) {
-            map.setDraggable(!active);
-            map.setZoomable(!active);
-            detailInteractionLocked = active;
+        if (map && detailActive !== detailInteractionLocked) {
+            map.setDraggable(!detailActive);
+            map.setZoomable(!detailActive);
+            detailInteractionLocked = detailActive;
         }
         updateZoomControls();
     }
@@ -517,7 +522,7 @@
     function beginPinch(event) {
         if (!canvas) return;
 
-        if (customTransformActive() && event.touches.length === 1) {
+        if (detailTransformActive() && event.touches.length === 1) {
             const touch = event.touches[0];
             detailPanGesture = {
                 x: touch.clientX,
@@ -534,7 +539,7 @@
 
         window.clearTimeout(pinchFinishTimer);
         detailPanGesture = null;
-        if (customTransformActive()) {
+        if (detailTransformActive()) {
             pinchGesture = {
                 mode: 'detail',
                 distance: Math.max(1, touchDistance(first, second)),
@@ -559,7 +564,7 @@
     }
 
     function updatePinch(event) {
-        if (detailPanGesture && event.touches.length === 1 && customTransformActive()) {
+        if (detailPanGesture && event.touches.length === 1 && detailTransformActive()) {
             const touch = event.touches[0];
             panTransformedMap(
                 touch.clientX - detailPanGesture.x,
@@ -639,7 +644,7 @@
     }
 
     function beginDetailPointerPan(event) {
-        if (!customTransformActive() || event.pointerType === 'touch' || event.button !== 0) return;
+        if (!detailTransformActive() || event.pointerType === 'touch' || event.button !== 0) return;
         const stage = getElement('mapZoomStage');
         detailPanGesture = {
             pointerId: event.pointerId,
@@ -669,7 +674,7 @@
     }
 
     function detailWheelZoom(event) {
-        if (!customTransformActive()) return;
+        if (!detailTransformActive()) return;
         event.preventDefault();
         const factor = Math.exp(-event.deltaY * 0.0015);
         setDetailScale(detailScale * factor, { x: event.clientX, y: event.clientY });
@@ -918,6 +923,9 @@
         window.addEventListener('resize', async () => {
             if (!map) return;
             syncOrientationFromDevice();
+            const center = map.getCenter();
+            map.relayout();
+            map.setCenter(center);
             window.kakao.maps.event.trigger(map, 'resize');
             updateOverlayPosition();
             applyDetailTransform();
@@ -927,6 +935,9 @@
             window.setTimeout(async () => {
                 syncOrientationFromDevice();
                 if (!map) return;
+                const center = map.getCenter();
+                map.relayout();
+                map.setCenter(center);
                 window.kakao.maps.event.trigger(map, 'resize');
                 updateOverlayPosition();
                 await renderRaster(true);

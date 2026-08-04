@@ -1227,6 +1227,38 @@ input:checked+.slider:before {
   box-sizing: border-box;
 }
 
+.map-auth-email-entry {
+  display: flex !important;
+  align-items: center;
+  margin: 0 !important;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.map-auth-email-entry:focus-within {
+  border-color: #276749;
+  box-shadow: 0 0 0 2px rgba(39, 103, 73, 0.14);
+}
+
+.map-auth-email-entry #mapAuthEmail {
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+}
+
+.map-auth-email-domain {
+  flex: none;
+  margin: 0 !important;
+  padding-right: 11px;
+  color: #475569;
+  font-size: 15px;
+  font-weight: 600 !important;
+  white-space: nowrap;
+}
+
 #mapAuthCode {
   letter-spacing: 0.28em;
   font-size: 20px;
