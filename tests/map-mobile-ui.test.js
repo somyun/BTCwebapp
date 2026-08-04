@@ -23,7 +23,7 @@ test('depot map entry is on the home page below notifications and labels default
     const sidebar = html.slice(html.indexOf('<nav id="sidenav"'), html.indexOf('</nav>'));
     assert.doesNotMatch(sidebar, /id="openMapBtn"/);
     assert.ok(html.indexOf('id="openMapBtn"') > html.indexOf('id="notificationToggleMain"'));
-    assert.match(html, /id="openMapBtn"[^>]*>[\s\S]*?기지도면 보기[\s\S]*?<\/button>/);
+    assert.match(html, /id="openMapBtn"[^>]*>[\s\S]*?호포기지 도면보기[\s\S]*?<\/button>/);
     assert.match(html, /id="cadLabelToggle"[^>]*type="checkbox"[^>]*checked/);
 });
 
@@ -37,22 +37,34 @@ test('display settings button toggles the layer panel accessibly', () => {
 
 test('mobile pinch updates the CAD canvas transform during the gesture', () => {
     assert.match(mapSource, /addEventListener\('touchmove', updatePinch/);
+    assert.match(mapSource, /screenPointToStagePoint\(midpoint\)/);
+    assert.match(mapSource, /screenPointToCanvasPoint\(midpoint\)/);
     assert.match(mapSource, /translate3d\(\$\{translateX\}px, \$\{translateY\}px, 0\) scale\(\$\{scale\}\)/);
     assert.match(styles, /\.cad-map-overlay\.pinching\s*{[\s\S]*?transition: none;/);
 });
 
-test('detail zoom cycles beyond the Kakao tile limit and keeps controls fixed', () => {
+test('additional zoom is limited to 2x beyond the Kakao tile limit and keeps controls fixed', () => {
     assert.match(html, /id="mapZoomStage" class="map-zoom-stage"/);
     assert.match(html, /id="detailZoomBtn"[^>]*aria-pressed="false"/);
     assert.match(html, /id="zoomInBtn"[^>]*aria-label="지도 확대"/);
     assert.match(html, /id="zoomOutBtn"[^>]*aria-label="지도 축소"/);
-    assert.match(mapSource, /DETAIL_ZOOM_STEPS = \[1, 2, 4, 8\]/);
+    assert.match(html, /id="detailZoomBtn"[^>]*>추가확대<\/button>/);
+    assert.match(mapSource, /DETAIL_ZOOM_STEPS = \[1, 2\]/);
+    assert.doesNotMatch(mapSource, /DETAIL_ZOOM_STEPS = \[1, 2, 4, 8\]/);
     assert.match(mapSource, /map\.setDraggable\(!dragLocked\)/);
     assert.match(mapSource, /if \(customTransformActive\(\) && event\.touches\.length === 1\)/);
     assert.match(mapSource, /if \(detailTransformActive\(\)\) \{[\s\S]*?mode: 'detail'/);
     assert.doesNotMatch(mapSource, /if \(customTransformActive\(\)\) \{[\s\S]*?mode: 'detail'/);
     assert.match(mapSource, /stage\.style\.transform = active/);
     assert.match(styles, /\.map-zoom-controls\s*{[\s\S]*?top: 50%;[\s\S]*?right: 12px;/);
+});
+
+test('team layers are included by default and the landscape list uses remaining height', () => {
+    assert.match(mapSource, /'teamA', 'teamB', 'teamC', 'teamD'/);
+    assert.match(mapSource, /'TEAM_A', 'TEAM_B', 'TEAM_C', 'TEAM_D'/);
+    assert.match(styles, /@media \(orientation: landscape\) and \(max-height: 720px\)/);
+    assert.match(styles, /\.map-view\.landscape-mode \.cad-layer-panel:not\(\[hidden\]\)[\s\S]*?top: 60px;[\s\S]*?bottom: 8px;/);
+    assert.match(styles, /\.map-view\.landscape-mode \.cad-layer-list[\s\S]*?flex: 1 1 auto;[\s\S]*?max-height: none;[\s\S]*?padding-bottom: 12px;/);
 });
 
 test('device orientation automatically rotates the map without an app button', () => {
