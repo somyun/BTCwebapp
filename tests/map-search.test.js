@@ -50,3 +50,8 @@ test('search results are responsive and independently scrollable', () => {
     assert.match(styles, /\.map-search-list\s*{[\s\S]*?overflow-y: auto;[\s\S]*?scroll-padding-bottom: 12px;/);
     assert.match(styles, /\.map-view\.landscape-mode \.map-type-controls\.search-active[\s\S]*?right: 70px;/);
 });
+
+test('CAD data resolves beside the deployed map script for test-site parity', () => {
+    assert.match(mapSource, /document\.currentScript\?\.src/);
+    assert.match(mapSource, /new URL\('cad-data\/hopo\/manifest\.json', MAP_SCRIPT_BASE_URL\)\.href/);
+});
