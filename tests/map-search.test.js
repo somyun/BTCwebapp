@@ -22,11 +22,18 @@ test('search button is the rightmost primary control and swaps to a cancellable 
     assert.match(mapSource, /panel\.hidden = true/);
 });
 
-test('search indexes authenticated CAD labels and supports multiple matches', () => {
+test('search indexes every CAD label and supports multiple matches', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'cad-data', 'hopo', 'manifest.json'), 'utf8'));
+    const labels = manifest.layers.flatMap((layer) => {
+        const data = JSON.parse(fs.readFileSync(path.join(root, 'cad-data', 'hopo', layer.file), 'utf8'));
+        return (data.labels || []).map((label) => ({ ...label, layerName: layer.name }));
+    });
+    const matches = labels.filter((label) => String(label.text).toLocaleLowerCase('ko-KR').includes('cf'));
+    assert.equal(labels.length, 2396);
+    assert.ok(matches.length > 1);
+    assert.ok(matches.every((label) => label.layerName && label.position.length === 2));
     assert.match(mapSource, /manifest\.layers\.map\(async \(layerInfo\)/);
-    assert.match(mapSource, /const layer = await loadLayer\(layerInfo\)/);
     assert.match(mapSource, /Array\.isArray\(layer\.labels\)/);
-    assert.match(mapSource, /position: \[Number\(position\[0\]\), Number\(position\[1\]\)\]/);
     assert.match(mapSource, /matches\.slice\(0, SEARCH_RESULT_LIMIT\)/);
 });
 
@@ -44,11 +51,7 @@ test('search results are responsive and independently scrollable', () => {
     assert.match(styles, /\.map-view\.landscape-mode \.map-type-controls\.search-active[\s\S]*?right: 70px;/);
 });
 
-test('CAD data is loaded only through the authenticated Storage client', () => {
-    const storageSource = fs.readFileSync(path.join(root, 'cad-storage.js'), 'utf8');
-    assert.match(mapSource, /BWACadStorage\.readJson\(CAD_MANIFEST_PATH/);
-    assert.match(mapSource, /BWACadStorage\.readJson\(layer\.file/);
-    assert.doesNotMatch(mapSource, /cad-data\/hopo|CAD_MANIFEST_URL/);
-    assert.match(storageSource, /getBytes\(ref\(storage, `\$\{CAD_ROOT\}\/\$\{path\}`\)/);
-    assert.match(storageSource, /token\.claims\.humetro !== true/);
+test('CAD data resolves beside the deployed map script for test-site parity', () => {
+    assert.match(mapSource, /document\.currentScript\?\.src/);
+    assert.match(mapSource, /new URL\('cad-data\/hopo\/manifest\.json', MAP_SCRIPT_BASE_URL\)\.href/);
 });

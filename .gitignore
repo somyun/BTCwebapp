@@ -9,8 +9,6 @@ apps-script-test/firebase_key.js
 # Separate GitHub Pages testbed; published from its own repository.
 testbed/
 
-# Local CAD conversion, source, and validation workspaces. Published CAD assets
-# are synchronized to authenticated Firebase Storage, never to GitHub Pages.
+# Local CAD conversion and validation workspace. Only cad-data/ is deployable.
 .analysis/
-/cad-data/
 호포도면지도_실행/

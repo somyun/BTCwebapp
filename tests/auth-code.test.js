@@ -7,7 +7,7 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
-function createHarness({ testBackend = false, overrideToken = true } = {}) {
+function createHarness() {
   const cache = new Map();
   const properties = new Map();
   const sent = [];
@@ -49,20 +49,12 @@ function createHarness({ testBackend = false, overrideToken = true } = {}) {
     },
     SERVICE_ACCOUNT_KEY: {
       client_email: "test@example.iam.gserviceaccount.com",
-      private_key: "unused-in-test",
-      project_id: testBackend ? "btcwebapp-test" : "btcwebapp-551bd"
-    },
-    TEST_FIREBASE_PROJECT_ID: "btcwebapp-test",
-    assertTestEnvironment_() {}
+      private_key: "unused-in-test"
+    }
   });
-  const source = fs.readFileSync(path.join(
-    __dirname,
-    "..",
-    testBackend ? "apps-script-test" : "apps-script",
-    "auth_code.js"
-  ), "utf8");
+  const source = fs.readFileSync(path.join(__dirname, "..", "apps-script", "auth_code.js"), "utf8");
   vm.runInContext(source, context);
-  if (overrideToken) context.createMapAuthCustomToken_ = (email) => `token:${email}`;
+  context.createMapAuthCustomToken_ = (email) => `token:${email}`;
   return { context, cache, sent };
 }
 
@@ -109,17 +101,4 @@ test("five incorrect attempts invalidate the code", () => {
   }
   const finalAttempt = context.verifyMapAuthCode("user@humetro.busan.kr", wrongCode);
   assert.equal(finalAttempt.code, "TOO_MANY_ATTEMPTS");
-});
-
-test("bwa_test auth keeps the same code flow and rejects an operational service account", () => {
-  const { context, sent } = createHarness({ testBackend: true });
-  assert.equal(context.requestMapAuthCode("user@humetro.busan.kr").success, true);
-  const code = sent[0].body.match(/\b(\d{6})\b/)[1];
-  assert.equal(context.verifyMapAuthCode("user@humetro.busan.kr", code).success, true);
-
-  const guarded = createHarness({ testBackend: true, overrideToken: false }).context;
-  guarded.SERVICE_ACCOUNT_KEY.project_id = "btcwebapp-551bd";
-  assert.throws(() => guarded.createMapAuthCustomToken_("user@humetro.busan.kr"), {
-    message: "TEST_FIREBASE_SERVICE_ACCOUNT_REQUIRED"
-  });
 });

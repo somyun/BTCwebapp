@@ -2,9 +2,11 @@
     'use strict';
 
     const KAKAO_JAVASCRIPT_KEY = '708065ee6e872ac3f158928a61d3252e';
-    const CAD_MANIFEST_PATH = 'manifest.json';
-    const CAD_MANIFEST_MAX_BYTES = 512 * 1024;
-    const CAD_LAYER_MAX_BYTES = 4 * 1024 * 1024;
+    const MAP_SCRIPT_BASE_URL = new URL(
+        '.',
+        document.currentScript?.src || window.location?.href || 'http://localhost/'
+    );
+    const CAD_MANIFEST_URL = new URL('cad-data/hopo/manifest.json', MAP_SCRIPT_BASE_URL).href;
     const CORE_LAYER_NAMES = new Set([
         '0', 'SIMPLE', 'CABLE', '신설', '신설1', 'WALL', '전주',
         'teamA', 'teamB', 'teamC', 'teamD',
@@ -21,6 +23,7 @@
     let sdkPromise = null;
     let manifestPromise = null;
     let manifest = null;
+    let manifestUrl = null;
     let map = null;
     let canvas = null;
     let controlsBound = false;
@@ -363,14 +366,10 @@
     function loadManifest() {
         if (manifestPromise) return manifestPromise;
 
-        if (!window.BWACadStorage?.readJson) {
-            return Promise.reject(new Error('인증된 도면 저장소를 준비하지 못했습니다.'));
-        }
-        manifestPromise = window.BWACadStorage.readJson(CAD_MANIFEST_PATH, {
-            maxBytes: CAD_MANIFEST_MAX_BYTES
-        }).catch((error) => {
-            manifestPromise = null;
-            throw error;
+        manifestPromise = fetch(CAD_MANIFEST_URL, { cache: 'no-cache' }).then(async (response) => {
+            if (!response.ok) throw new Error('호포 도면 정보를 불러오지 못했습니다.');
+            manifestUrl = response.url;
+            return response.json();
         });
         return manifestPromise;
     }
@@ -378,11 +377,10 @@
     function loadLayer(layer) {
         if (layerCache.has(layer.id)) return layerCache.get(layer.id);
 
-        const request = window.BWACadStorage.readJson(layer.file, {
-            maxBytes: CAD_LAYER_MAX_BYTES
-        }).catch((error) => {
-            layerCache.delete(layer.id);
-            throw new Error(`${layer.name} 레이어를 불러오지 못했습니다.`, { cause: error });
+        const url = new URL(layer.file, manifestUrl).href;
+        const request = fetch(url, { cache: 'force-cache' }).then((response) => {
+            if (!response.ok) throw new Error(`${layer.name} 레이어를 불러오지 못했습니다.`);
+            return response.json();
         });
         layerCache.set(layer.id, request);
         return request;

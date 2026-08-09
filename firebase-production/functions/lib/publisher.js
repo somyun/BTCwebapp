@@ -277,64 +277,6 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
     return persistForm(buildFormDocument(item, payload), force);
   }
 
-  async function publishSubmissionSnapshot({ formDocument, rows, measurements, sourceRevision }) {
-    if (!formDocument || !Array.isArray(rows) || !Array.isArray(measurements) ||
-        rows.length !== measurements.length || rows.length !== formDocument.rowCount) {
-      throw new Error("INVALID_SUBMISSION_SNAPSHOT");
-    }
-    const normalizedRevision = normalizeRevision(sourceRevision);
-    const valuesByIdentity = new Map(measurements.map((measurement) => [
-      measurement.uniqueId
-        ? `id:${measurement.uniqueId}`
-        : `pair:${measurement.location.toLocaleLowerCase("ko-KR")}|${measurement.item.toLocaleLowerCase("ko-KR")}`,
-      measurement
-    ]));
-    const updatedRows = rows.map((row) => {
-      const identity = row.uniqueId
-        ? `id:${row.uniqueId}`
-        : `pair:${row.location.toLocaleLowerCase("ko-KR")}|${row.item.toLocaleLowerCase("ko-KR")}`;
-      const measurement = valuesByIdentity.get(identity);
-      if (!measurement || row.location !== measurement.location || row.item !== measurement.item ||
-          (row.unit || "") !== measurement.unit) {
-        throw new Error("SUBMISSION_SNAPSHOT_IDENTITY_MISMATCH");
-      }
-      return { ...row, value: normalizeOptionalString(measurement.value) ?? "" };
-    });
-    const formResult = await persistForm(buildFormDocument({
-      formKey: formDocument.formKey,
-      sheetName: formDocument.sheetName,
-      lastModifiedDate: normalizedRevision
-    }, updatedRows), true);
-
-    const listRef = firestore.collection("publicCache").doc("formList");
-    const listSnapshot = await listRef.get();
-    if (!listSnapshot.exists) throw new Error("PUBLISHED_FORM_LIST_NOT_FOUND");
-    const currentList = listSnapshot.data();
-    if (!Array.isArray(currentList.items) || currentList.items.length !== currentList.itemCount) {
-      throw new Error("INVALID_PUBLISHED_FORM_LIST");
-    }
-    let matched = 0;
-    const items = currentList.items.map((item) => {
-      if (item.formKey !== formDocument.formKey) return item;
-      if (item.sheetName !== formDocument.sheetName) {
-        throw new Error("PUBLISHED_FORM_LIST_IDENTITY_MISMATCH");
-      }
-      matched += 1;
-      return { ...item, lastModifiedDate: normalizedRevision };
-    });
-    if (matched !== 1) throw new Error("PUBLISHED_FORM_LIST_ENTRY_NOT_FOUND");
-    const listRevision = items.map((item) => normalizeRevision(item.lastModifiedDate)).sort().at(-1);
-    const listDocument = {
-      schemaVersion: SCHEMA_VERSION,
-      sourceRevision: listRevision,
-      contentHash: hashCanonical({ schemaVersion: SCHEMA_VERSION, sourceRevision: listRevision, items }),
-      itemCount: items.length,
-      items
-    };
-    const listResult = await persistFormList(listDocument, true);
-    return { form: formResult, list: listResult };
-  }
-
   async function publishChangedForm(item, force) {
     const reference = firestore.collection("publicForms").doc(item.formKey);
     const existing = await reference.get();
@@ -379,7 +321,7 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
     return result;
   }
 
-  return { publishFormList, publishForm, publishAllChangedForms, publishSubmissionSnapshot };
+  return { publishFormList, publishForm, publishAllChangedForms };
 }
 
 module.exports = {
@@ -394,7 +336,6 @@ module.exports = {
   buildStoragePlan,
   createPublisher,
   formKeyForSheet,
-  hashCanonical,
   normalizeFormList,
   normalizeFormRows,
   serializedBytes,

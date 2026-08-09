@@ -10,7 +10,7 @@
         apiKey: 'AIzaSyD4eSO-idxDepO8knAqLLzxX5ZfNCy9NAM',
         spreadsheetId: '19rgzRnTQtOwwW7Ts5NbBuItNey94dAZsEnO7Tk0cm6s',
         requestTimeoutMs: 10000,
-        gasFallback: false
+        gasFallback: true
     });
     const ALLOWED_SOURCES = new Set(['gas', 'shadow', 'firestore']);
     const requestedSource = new URLSearchParams(root.location.search).get('readSource');
