@@ -19,6 +19,20 @@ service cloud.firestore {
       }
     }
 
+    // Measurement submissions and operational controls are server-only.
+    // The browser uses validated HTTPS Functions and never writes Firestore directly.
+    match /measurementSubmissions/{submissionId} {
+      allow read, write: if false;
+    }
+
+    match /systemConfig/{documentId} {
+      allow read, write: if false;
+    }
+
+    match /submissionRateLimits/{documentId} {
+      allow read, write: if false;
+    }
+
     // Everything else remains private, including future submission data.
     match /{document=**} {
       allow read, write: if false;

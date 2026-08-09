@@ -2,19 +2,20 @@
   "name": "btcwebapp-production-functions",
   "version": "1.0.0",
   "private": true,
-  "description": "Read-only Firestore cache publisher for BTCwebapp production",
+  "description": "Firestore cache publisher and asynchronous measurement sync for BTCwebapp production",
   "main": "index.js",
   "engines": {
     "node": "22"
   },
   "scripts": {
-    "lint": "node --check index.js && node --check lib/publisher.js",
+    "lint": "node --check index.js && node --check lib/publisher.js && node --check lib/submission-sync.js",
     "test": "node --test",
     "verify": "npm run lint && npm test"
   },
   "dependencies": {
     "firebase-admin": "14.2.0",
-    "firebase-functions": "7.3.2"
+    "firebase-functions": "7.3.2",
+    "google-auth-library": "10.9.1"
   },
   "overrides": {
     "brace-expansion": "5.0.8",

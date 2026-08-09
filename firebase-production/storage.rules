@@ -1,0 +1,17 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /cad/hopo/{objectPath=**} {
+      allow read: if request.auth != null
+        && request.auth.token.humetro == true
+        && request.auth.token.humetroEmail is string
+        && request.auth.token.humetroEmail.matches('^[^@]+@humetro[.]busan[.]kr$');
+      allow write: if false;
+    }
+
+    match /{objectPath=**} {
+      allow read, write: if false;
+    }
+  }
+}

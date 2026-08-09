@@ -149,6 +149,13 @@ async function createHarness() {
                 angle: 0,
                 addEventListener: (name, handler) => { orientationListeners[name] = handler; }
             }
+        },
+        BWACadStorage: {
+            readJson: async () => ({
+                center_wgs84: [129, 35],
+                bounds_wgs84: [128.99, 34.99, 129.01, 35.01],
+                layers: []
+            })
         }
     };
     const documentListeners = {};
@@ -173,16 +180,7 @@ async function createHarness() {
         Map,
         Set,
         URL,
-        Promise,
-        fetch: async () => ({
-            ok: true,
-            url: 'https://example.test/cad-data/hopo/manifest.json',
-            json: async () => ({
-                center_wgs84: [129, 35],
-                bounds_wgs84: [128.99, 34.99, 129.01, 35.01],
-                layers: []
-            })
-        })
+        Promise
     });
     const source = fs.readFileSync(path.join(__dirname, '..', 'map.js'), 'utf8');
     vm.runInContext(source, context);

@@ -3,8 +3,10 @@
 
     const ALLOWED_DOMAIN = '@humetro.busan.kr';
     const HUMETRO_UID_PREFIX = 'humetro:';
-    const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzuWS4Q5kTzDRH4IBpeXBa69KngElRdArtTCzTV0NDQsB3y4oABBIzrTLuPOZH5KOPP/exec';
-    const firebaseConfig = {
+    const runtimeConfig = window.BWA_AUTH_CONFIG || window.BWA_TEST_CONFIG || {};
+    const GAS_API_URL = runtimeConfig.gasApiUrl ||
+        'https://script.google.com/macros/s/AKfycbzuWS4Q5kTzDRH4IBpeXBa69KngElRdArtTCzTV0NDQsB3y4oABBIzrTLuPOZH5KOPP/exec';
+    const firebaseConfig = runtimeConfig.firebase || {
         apiKey: 'AIzaSyD4eSO-idxDepO8knAqLLzxX5ZfNCy9NAM',
         authDomain: 'btcwebapp-551bd.firebaseapp.com',
         projectId: 'btcwebapp-551bd',
@@ -193,7 +195,10 @@
     function initialize() {
         try {
             if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-            auth = firebase.auth();
+            const firebaseApp = firebase.apps.find((app) =>
+                app.options?.projectId === firebaseConfig.projectId) ||
+                firebase.initializeApp(firebaseConfig, `bwa-map-auth-${firebaseConfig.projectId}`);
+            auth = firebaseApp.auth();
             auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch((error) => {
                 console.error('Firebase auth persistence failed:', error);
             });

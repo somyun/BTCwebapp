@@ -124,3 +124,35 @@ test("a changed revision refreshes only that form and then the list", async () =
   assert.equal(result.list.status, "published");
   assert.equal(firestore.documents.get(`publicForms/${oldItem.formKey}`).rows[0].value, "2");
 });
+
+test("submission publishing maps sorted measurements by identity", async () => {
+  const initialList = normalizeFormList(sourceList);
+  const initialForm = buildFormDocument(initialList.items[0], [
+    { uniqueId: "u1", location: "L1", item: "I1", value: "1", unit: "V" },
+    { uniqueId: "u2", location: "L2", item: "I2", value: "2", unit: "A" }
+  ]);
+  const initialPlan = buildStoragePlan(initialForm);
+  const firestore = new FakeFirestore({
+    "publicCache/formList": initialList,
+    [`publicForms/${initialForm.formKey}`]: initialPlan.root
+  });
+  const publisher = createPublisher({
+    firestore,
+    fetchImpl: async () => { throw new Error("GAS_MUST_NOT_BE_CALLED"); },
+    serverTimestamp: () => "SERVER_TIMESTAMP",
+    logger: { info() {} }
+  });
+  await publisher.publishSubmissionSnapshot({
+    formDocument: initialPlan.root,
+    rows: initialForm.rows,
+    measurements: [
+      { uniqueId: "u2", location: "L2", item: "I2", value: "20", unit: "A" },
+      { uniqueId: "u1", location: "L1", item: "I1", value: "10", unit: "V" }
+    ],
+    sourceRevision: "2026-07-29T02:00:00.000Z"
+  });
+  assert.deepEqual(
+    firestore.documents.get(`publicForms/${initialForm.formKey}`).rows.map((row) => row.value),
+    ["10", "20"]
+  );
+});
