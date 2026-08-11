@@ -56,6 +56,12 @@ test('legacy notification devices can be imported and silently claimed by the sa
     assert.match(app, /bootstrapFirebaseNotificationMigration/);
 });
 
+test('production cache versions force the notification migration code and worker to refresh', () => {
+    assert.match(read('index.html'), /script\.js\?v=production-adoption-2/);
+    assert.match(read('notification-settings.html'), /notification-settings\.js\?v=production-notifications-2/);
+    assert.match(read('script.js'), /firebase-messaging-sw\.js\?v=production-notifications-2/);
+});
+
 test('test-only environment values do not leak into adopted production code', () => {
     const adoptedFiles = [
         'firebase-messaging-sw.js',

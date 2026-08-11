@@ -216,7 +216,7 @@ window.onload = function () {
 
     // 앱 시작 시 운영 scope에 서비스 워커를 등록합니다.
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('./firebase-messaging-sw.js', { scope: './' })
+        navigator.serviceWorker.register('./firebase-messaging-sw.js?v=production-notifications-2', { scope: './' })
             .then((registration) => {
                 console.log('Service Worker registered with scope:', registration.scope);
                 void bootstrapFirebaseNotificationMigration(registration);
