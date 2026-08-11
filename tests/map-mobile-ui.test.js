@@ -21,8 +21,10 @@ test('map controls expose display settings and an icon-only location button', ()
 
 test('depot map entry is on the home page below notifications and labels default to visible', () => {
     const sidebar = html.slice(html.indexOf('<nav id="sidenav"'), html.indexOf('</nav>'));
+    const homeView = html.slice(html.indexOf('<div id="homeView"'), html.indexOf('<section id="mapView"'));
     assert.doesNotMatch(sidebar, /id="openMapBtn"/);
-    assert.ok(html.indexOf('id="openMapBtn"') > html.indexOf('id="notificationToggleMain"'));
+    assert.match(homeView, /id="openMapBtn"/);
+    assert.doesNotMatch(html, /id="notificationToggleMain"/);
     assert.match(html, /id="openMapBtn"[^>]*>[\s\S]*?호포기지 도면보기[\s\S]*?<\/button>/);
     assert.match(html, /id="cadLabelToggle"[^>]*type="checkbox"[^>]*checked/);
 });

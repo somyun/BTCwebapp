@@ -46,15 +46,33 @@ let sortableInstance = null;
 let isSortMode = false;
 let isMapViewActive = false;
 let selectedFormRequestId = 0;
+let xlsxPreparationId = 0;
 
 // 양식 선택 전 홈 화면에서만 보이는 요소를 한 곳에서 관리합니다.
 // 테스트 앱에도 같은 목록과 전환 함수를 두어 화면 상태가 서로 어긋나지 않게 합니다.
 const HOME_ONLY_ELEMENT_IDS = [
     'favoritesSection',
     'formMessage',
-    'mainToggleContainer',
     'openMapBtn'
 ];
+
+const LEGACY_NOTIFICATION_SELECTORS = [
+    '#notificationToggle',
+    '#notificationToggleMain',
+    '#mainToggleContainer',
+    '#keywordModalOverlay',
+    '#keywordModal'
+];
+
+function removeLegacyNotificationElements() {
+    document.querySelectorAll(LEGACY_NOTIFICATION_SELECTORS.join(',')).forEach((element) => element.remove());
+}
+
+removeLegacyNotificationElements();
+window.addEventListener('pageshow', () => {
+    removeLegacyNotificationElements();
+    closeMenu();
+});
 
 function setHomeOnlyElementsVisible(isVisible) {
     HOME_ONLY_ELEMENT_IDS.forEach((id) => {
@@ -921,6 +939,7 @@ function createDynamicForm(formData, formTitle) {
         isMeasurementDirty = true;
         pendingSubmission = null;
         preparedDownload = null;
+        xlsxPreparationId += 1;
         const downloadButton = document.getElementById('xlsxDownloadBtn');
         if (downloadButton) {
             downloadButton.disabled = true;
@@ -935,10 +954,11 @@ function createDynamicForm(formData, formTitle) {
 
     // [4] Sortable 초기화 (비활성화 상태로 시작)
     initSortable();
+    void prepareXlsxForCurrentRevision();
 }
 
 // --- XLSX 다운로드 준비 ---
-async function prepareXlsxInAdvance(fileId, sheetName, fileName, fileDateStr) {
+async function prepareXlsxInAdvance(fileId, sheetName, fileName, fileDateStr, preparationId) {
     // GAS API는 fileId, sheetName, filename을 파라미터로 받아서 Base64를 리턴하도록 되어있음
     try {
         let url = `${GAS_API_URL}?fileId=${encodeURIComponent('ignored')}&sheetName=${encodeURIComponent(sheetName)}&filename=${encodeURIComponent(fileName)}`;
@@ -962,7 +982,7 @@ async function prepareXlsxInAdvance(fileId, sheetName, fileName, fileDateStr) {
     // URL Construct again
     // We need to pass TARGET_SPREADSHEET_ID... but we removed it from Index.html.
     // Let's assume we pass 'default' and backend handles it, OR fetch 'getFormList' returned spreadsheetId.
-    const targetId = currentSheetInfo?.spreadsheetId || '19rgzRnTQtOwwW7Ts5NbBuItNey94dAZsEnO7Tk0cm6s'; // Fallback to hardcoded ID if needed
+    const targetId = fileId || '19rgzRnTQtOwwW7Ts5NbBuItNey94dAZsEnO7Tk0cm6s'; // Fallback to hardcoded ID if needed
 
     let fetchUrl = `${GAS_API_URL}?fileId=${encodeURIComponent(targetId)}&sheetName=${encodeURIComponent(sheetName)}&filename=${encodeURIComponent(fileName)}`;
 
@@ -972,6 +992,7 @@ async function prepareXlsxInAdvance(fileId, sheetName, fileName, fileDateStr) {
         if (!res.ok || json.error || !json.base64 || !json.filename) {
             throw new Error(json.error || `XLSX_HTTP_${res.status}`);
         }
+        if (preparationId !== xlsxPreparationId) return false;
 
         preparedDownload = json;
         const btn = document.getElementById('xlsxDownloadBtn');
@@ -985,6 +1006,7 @@ async function prepareXlsxInAdvance(fileId, sheetName, fileName, fileDateStr) {
         return true;
     } catch (err) {
         console.error(err);
+        if (preparationId !== xlsxPreparationId) return false;
         preparedDownload = null;
         const btn = document.getElementById('xlsxDownloadBtn');
         if (btn) {
@@ -996,16 +1018,20 @@ async function prepareXlsxInAdvance(fileId, sheetName, fileName, fileDateStr) {
 }
 
 function xlsxFilename() {
-    const now = new Date();
-    const date = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const revision = currentSheetInfo?.lastModifiedDate || currentSheetInfo?.sourceRevision;
+    const parsedRevision = new Date(revision);
+    const filenameDate = Number.isNaN(parsedRevision.getTime()) ? new Date() : parsedRevision;
+    const date = `${String(filenameDate.getFullYear()).slice(-2)}${String(filenameDate.getMonth() + 1).padStart(2, '0')}${String(filenameDate.getDate()).padStart(2, '0')}`;
     return {
         date,
         filename: `${currentSheetInfo.displayName || currentSheetInfo.sheetName}_${date}.xlsx`
     };
 }
 
-async function prepareXlsxAfterSync() {
+async function prepareXlsxForCurrentRevision({ reportStatus = false } = {}) {
     if (!currentSheetInfo) return false;
+    const preparationId = ++xlsxPreparationId;
+    const sheetInfo = { ...currentSheetInfo };
     const button = document.getElementById('xlsxDownloadBtn');
     if (button) {
         button.disabled = true;
@@ -1014,24 +1040,26 @@ async function prepareXlsxAfterSync() {
     }
     const { date, filename } = xlsxFilename();
     const prepared = await prepareXlsxInAdvance(
-        currentSheetInfo.spreadsheetId,
-        currentSheetInfo.sheetName,
+        sheetInfo.spreadsheetId,
+        sheetInfo.sheetName,
         filename,
-        date
+        date,
+        preparationId
     );
+    if (preparationId !== xlsxPreparationId) return false;
     if (prepared) {
-        updateSubmissionStatus('Google Sheet 동기화 및 XLSX 준비 완료', 'synced');
+        if (reportStatus) updateSubmissionStatus('Google Sheet 동기화 및 XLSX 준비 완료', 'synced');
         return true;
     }
     if (button) button.dataset.prepareRetry = 'true';
-    updateSubmissionStatus('Google Sheet 동기화 완료 · XLSX 준비 실패', 'xlsx-error');
+    if (reportStatus) updateSubmissionStatus('Google Sheet 동기화 완료 · XLSX 준비 실패', 'xlsx-error');
     return false;
 }
 
 async function triggerPreparedDownload(buttonId) {
     const button = document.getElementById(buttonId);
     if (!preparedDownload && button?.dataset.prepareRetry === 'true') {
-        await prepareXlsxAfterSync();
+        await prepareXlsxForCurrentRevision();
     }
     if (!preparedDownload) {
         alert('파일이 아직 준비되지 않았습니다.');
@@ -1188,7 +1216,7 @@ async function saveMeasurements() {
         );
         setSaveButtonBusy(true, '저장 완료');
         await loadFormList();
-        await prepareXlsxAfterSync();
+        await prepareXlsxForCurrentRevision({ reportStatus: true });
         showStatus('측정값이 Google Sheet에 저장되었습니다.', 'success', 3000);
     } catch (error) {
         updateSubmissionStatus(`저장 실패 · GAS 재전송 없음 · ${error.message}`, 'failed');

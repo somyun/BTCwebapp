@@ -57,9 +57,27 @@ test('legacy notification devices can be imported and silently claimed by the sa
 });
 
 test('production cache versions force the notification migration code and worker to refresh', () => {
-    assert.match(read('index.html'), /script\.js\?v=production-adoption-3/);
+    assert.match(read('index.html'), /script\.js\?v=production-adoption-4/);
     assert.match(read('notification-settings.html'), /notification-settings\.js\?v=production-notifications-2/);
     assert.match(read('script.js'), /firebase-messaging-sw\.js\?v=production-notifications-2/);
+});
+
+test('legacy notification UI is absent and removed again after browser history restoration', () => {
+    const index = read('index.html');
+    const script = read('script.js');
+    const styles = read('style.css');
+    assert.doesNotMatch(index, /id="(?:notificationToggle|notificationToggleMain|mainToggleContainer|keywordModalOverlay|keywordModal)"/);
+    assert.match(script, /const LEGACY_NOTIFICATION_SELECTORS = \[/);
+    assert.match(script, /window\.addEventListener\('pageshow',/);
+    assert.doesNotMatch(styles, /\.keyword-modal-(?:overlay|content)|\.switch-container/);
+});
+
+test('notification documents and assets are prefetched for faster navigation', () => {
+    const index = read('index.html');
+    assert.match(index, /rel="prefetch" href="\.\/notifications\.html\?v=production-notifications-2" as="document"/);
+    assert.match(index, /rel="prefetch" href="\.\/notification-settings\.html\?v=production-notifications-2" as="document"/);
+    assert.match(index, /href="\.\/notifications\.html\?v=production-notifications-2"/);
+    assert.match(index, /href="\.\/notification-settings\.html\?v=production-notifications-2"/);
 });
 
 test('dynamic form header controls use CSP-safe event listeners', () => {

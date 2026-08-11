@@ -12,9 +12,14 @@ const testbedRoot = path.join(root, 'testbed', 'bwa_test_publish');
 const testbedSource = fs.readFileSync(path.join(testbedRoot, 'testbed.js'), 'utf8');
 const testbedStyles = fs.readFileSync(path.join(testbedRoot, 'style.css'), 'utf8');
 
-const expectedHomeOnlyIds = [
+const productionHomeOnlyIds = [
     'favoritesSection',
     'formMessage',
+    'openMapBtn'
+];
+
+const testbedHomeOnlyIds = [
+    ...productionHomeOnlyIds.slice(0, 2),
     'mainToggleContainer',
     'openMapBtn'
 ];
@@ -25,9 +30,9 @@ function homeOnlyIds(source) {
     return [...declaration[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
 }
 
-test('production and bwa_test share one home-only element registry', () => {
-    assert.deepEqual(homeOnlyIds(productionSource), expectedHomeOnlyIds);
-    assert.deepEqual(homeOnlyIds(testbedSource), expectedHomeOnlyIds);
+test('production removes the legacy notification control from its home-only registry', () => {
+    assert.deepEqual(homeOnlyIds(productionSource), productionHomeOnlyIds);
+    assert.deepEqual(homeOnlyIds(testbedSource), testbedHomeOnlyIds);
     for (const source of [productionSource, testbedSource]) {
         assert.match(source, /function setHomeOnlyElementsVisible\(isVisible\)/);
         assert.match(source, /classList\.toggle\('home-only-hidden', !isVisible\)/);
