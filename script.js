@@ -5,6 +5,11 @@ console.log("Script.js 로드됨.");
 // 'backend_gas_v2.js'를 웹 앱으로 배포한 후 주소를 복사해 넣으세요.
 // =================================================================================
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzuWS4Q5kTzDRH4IBpeXBa69KngElRdArtTCzTV0NDQsB3y4oABBIzrTLuPOZH5KOPP/exec';
+const SUBMIT_MEASUREMENTS_URL = 'https://asia-northeast3-btcwebapp-551bd.cloudfunctions.net/submitMeasurements';
+const GET_SUBMISSION_URL = 'https://asia-northeast3-btcwebapp-551bd.cloudfunctions.net/getMeasurementSubmission';
+const SUBMISSION_POLL_INTERVAL_MS = 1000;
+const SUBMISSION_POLL_TIMEOUT_MS = 90000;
+const FUNCTION_REQUEST_TIMEOUT_MS = 20000;
 
 // --- Firebase Config ---
 const firebaseConfig = {
@@ -35,10 +40,27 @@ let currentSheetInfo = null;
 let favorites = {};
 let isMeasurementDirty = false;
 let preparedDownload = null;
+let pendingSubmission = null;
 let validationData = {};
 let sortableInstance = null;
 let isSortMode = false;
 let isMapViewActive = false;
+let selectedFormRequestId = 0;
+
+// 양식 선택 전 홈 화면에서만 보이는 요소를 한 곳에서 관리합니다.
+// 테스트 앱에도 같은 목록과 전환 함수를 두어 화면 상태가 서로 어긋나지 않게 합니다.
+const HOME_ONLY_ELEMENT_IDS = [
+    'favoritesSection',
+    'formMessage',
+    'mainToggleContainer',
+    'openMapBtn'
+];
+
+function setHomeOnlyElementsVisible(isVisible) {
+    HOME_ONLY_ELEMENT_IDS.forEach((id) => {
+        document.getElementById(id)?.classList.toggle('home-only-hidden', !isVisible);
+    });
+}
 
 // --- API 통신 헬퍼 함수 ---
 async function callApi(action, method = 'GET', data = null) {
@@ -169,18 +191,18 @@ if (resetBtn) {
 
 // 웹페이지 로드 시 초기화
 window.onload = function () {
+    document.getElementById('uploadBtn')?.addEventListener('click', handleUpload);
+    document.getElementById('formSelect')?.addEventListener('change', loadSelectedForm);
     loadFormList();
     initializeFavorites();
     updateHomeButtonVisibility();
     addHomeStateToHistory();
 
-    window.addEventListener('popstate', function (event) {
+    window.addEventListener('popstate', () => {
         // 뒤로가기 시 홈 화면으로 복귀
-        document.getElementById('formSelect').value = '';
-        currentSheetInfo = null;
+        const formSelect = document.getElementById('formSelect');
+        if (formSelect) formSelect.value = '';
         loadSelectedForm();
-        updateHomeButtonVisibility();
-        updateHomeButtonVisibility();
     });
 
     // [Issue 3 Fix] 새로고침/닫기 시 변경사항 경고 (beforeunload 복원)
@@ -192,93 +214,62 @@ window.onload = function () {
         }
     });
 
-    // 앱 시작 시 서비스 워커 등록 및 설정 동기화
+    // 앱 시작 시 운영 scope에 서비스 워커를 등록합니다.
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('./firebase-messaging-sw.js')
+        navigator.serviceWorker.register('./firebase-messaging-sw.js', { scope: './' })
             .then((registration) => {
                 console.log('Service Worker registered with scope:', registration.scope);
-                // 서비스 워커 등록 성공 후 서버 설정 동기화 시도
-                syncNotificationSettingsWithServer();
+                void bootstrapFirebaseNotificationMigration(registration);
             }).catch((err) => {
                 console.log('Service Worker registration failed:', err);
             });
     }
 
-    // 알림 토글 리스너 및 초기 상태 설정
-    // 사이드바 토글과 메인 토글 모두 처리하기 위해 공통 함수 사용 또는 각각 이벤트 등록
-    const sideToggle = document.getElementById('notificationToggle');
-    const mainToggle = document.getElementById('notificationToggleMain'); // 메인 화면 토글 ID 예정
-
-    // 초기 상태 로드
-    const isNotifActive = getFromStorage('isNotificationActive') === true;
-    if (sideToggle) sideToggle.checked = isNotifActive;
-    if (mainToggle) mainToggle.checked = isNotifActive;
-
-    // 토글 비활성화 헬퍼
-    function setToggleDisabled(disabled) {
-        if (sideToggle) {
-            sideToggle.disabled = disabled;
-            sideToggle.style.opacity = disabled ? '0.5' : '1';
-        }
-        if (mainToggle) {
-            mainToggle.disabled = disabled;
-            mainToggle.style.opacity = disabled ? '0.5' : '1';
-        }
-        // 로딩 상태 표시 (옵션)
-        if (disabled) {
-            showStatus('동기화 중...', 'loading');
-        }
-    }
-
-    // 공통 핸들러
-    async function handleToggleChange(e) {
-        // iOS PWA 체크
-        if (checkIosPwaStatusAndShowGuide()) {
-            e.target.checked = false; // 토글 원복
-            if (sideToggle) sideToggle.checked = false;
-            if (mainToggle) mainToggle.checked = false;
-            return;
-        }
-
-        const newState = e.target.checked;
-
-        if (newState) {
-            // ON으로 변경 시도: 일단 UI를 OFF로 되돌리고 모달을 띄움
-            // (사용자가 모달에서 '저장'을 눌러야 비로소 ON이 됨)
-            e.target.checked = false;
-            if (sideToggle) sideToggle.checked = false;
-            if (mainToggle) mainToggle.checked = false;
-
-            openKeywordModal();
-        } else {
-            // OFF로 변경 시: UI 동기화 및 Optimistic UI 적용
-            if (sideToggle) sideToggle.checked = false;
-            if (mainToggle) mainToggle.checked = false;
-
-            saveToStorage('isNotificationActive', false);
-            // showStatus('알림이 해제되었습니다.', 'success', 2000); // 사용자 요청으로 제거
-
-            // 백그라운드에서 서버 동기화
-            disableNotification();
-        }
-    }
-
-    if (sideToggle) sideToggle.addEventListener('change', handleToggleChange);
-    // 메인 토글은 동적으로 생성되므로, 생성 시점에 이벤트 리스너를 달거나 이벤트 위임이 필요함.
-    document.addEventListener('change', function (e) {
-        if (e.target && e.target.id === 'notificationToggleMain') {
-            handleToggleChange(e);
-        }
-    });
-
-    // 모달 버튼 리스너
-    document.getElementById('closeKeywordModalBtn').addEventListener('click', closeKeywordModal);
-    document.getElementById('saveKeywordBtn').addEventListener('click', handleKeywordSave);
-    document.getElementById('keywordModalOverlay').addEventListener('click', closeKeywordModal);
-
-    // 외부에 헬퍼 노출 (모달 닫기/저장 함수에서 접근 가능하도록)
-    window.setToggleDisabled = setToggleDisabled;
+    initializeNotificationHeaderState();
 };
+
+async function bootstrapFirebaseNotificationMigration(registration) {
+    if (!messaging || !window.BWANotificationStore ||
+        getFromStorage('isNotificationActive') !== true ||
+        typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    try {
+        const [identity, token] = await Promise.all([
+            window.BWANotificationStore.getOrCreateIdentity(),
+            messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: registration })
+        ]);
+        if (!token) return;
+        const response = await fetch('https://asia-northeast3-btcwebapp-551bd.cloudfunctions.net/registerNotificationDevice', {
+            method: 'POST',
+            cache: 'no-store',
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                deviceId: identity.deviceId,
+                deviceSecret: identity.deviceSecret,
+                token,
+                userAgent: navigator.userAgent,
+                keywords: String(getFromStorage('userKeywords', '') || ''),
+                active: true
+            })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.ok !== true) return;
+        if (payload.result?.migratedLegacy) {
+            saveToStorage('userKeywords', String(payload.result.keywords || ''));
+            saveToStorage('isNotificationActive', payload.result.active === true);
+        }
+    } catch (_) {
+        // Existing legacy delivery remains active and migration retries on the next visit.
+    }
+}
+
+function initializeNotificationHeaderState() {
+    const historyButton = document.getElementById('notificationHistoryBtn');
+    if (!historyButton) return;
+    const active = getFromStorage('isNotificationActive') === true &&
+        typeof Notification !== 'undefined' && Notification.permission === 'granted';
+    historyButton.classList.toggle('notification-off', !active);
+    historyButton.title = active ? '알림 내역' : '알림 꺼짐 · 설정 및 내역';
+}
 
 // --- Firebase Notification Logic ---
 async function requestNotificationPermission() {
@@ -559,6 +550,54 @@ function showStatus(message, type, duration = 0) {
     }
 }
 
+function renderFormMessage(message) {
+    const container = document.getElementById('dynamicFormContainer');
+    if (!container) return;
+    container.replaceChildren();
+    const title = document.createElement('h3');
+    title.textContent = '측정값 입력 폼';
+    const paragraph = document.createElement('p');
+    paragraph.id = 'formMessage';
+    paragraph.textContent = message;
+    container.append(title, paragraph);
+}
+
+function renderFormError(message, retryHandler) {
+    const container = document.getElementById('dynamicFormContainer');
+    if (!container) return;
+    container.replaceChildren();
+    const title = document.createElement('h3');
+    title.textContent = '측정값 입력 폼';
+    const paragraph = document.createElement('p');
+    paragraph.className = 'read-error-message';
+    paragraph.setAttribute('role', 'alert');
+    paragraph.textContent = message;
+    const retryButton = document.createElement('button');
+    retryButton.type = 'button';
+    retryButton.className = 'read-retry-button';
+    retryButton.textContent = '다시 시도';
+    retryButton.addEventListener('click', retryHandler);
+    container.append(title, paragraph, retryButton);
+}
+
+function renderListFailure(error) {
+    const formSelect = document.getElementById('formSelect');
+    const formListStatus = document.getElementById('formListStatus');
+    if (formSelect) formSelect.disabled = true;
+    if (!formListStatus) return;
+    formListStatus.replaceChildren();
+    const message = document.createElement('div');
+    message.className = 'read-error-message';
+    message.setAttribute('role', 'alert');
+    message.textContent = `로드 오류: ${error.message}`;
+    const retryButton = document.createElement('button');
+    retryButton.type = 'button';
+    retryButton.className = 'read-retry-button compact';
+    retryButton.textContent = '목록 다시 시도';
+    retryButton.addEventListener('click', loadFormList);
+    formListStatus.append(message, retryButton);
+}
+
 // --- iOS PWA Install Guide Logic ---
 // 변경: 로드시 체크가 아니라, 토글 동작 시 호출되어 가이드 표시 여부를 결정
 function checkIosPwaStatusAndShowGuide() {
@@ -660,13 +699,16 @@ async function processFileUpload(fileData, userChoice) {
             } else {
                 const msg = response.message || "알 수 없는 오류";
                 showStatus(msg, 'error');
-                formContainer.innerHTML = `<h3>측정값 입력 폼</h3><p id="formMessage" class="error">폼 생성 실패: ${msg}</p>`;
+                renderFormError(
+                    `폼 생성 실패: ${msg}`,
+                    () => processFileUpload(fileData, userChoice)
+                );
             }
         }
     } catch (error) {
         const msg = `서버 통신 오류: ${error.message}`;
         showStatus(msg, 'error');
-        formContainer.innerHTML = `<h3>측정값 입력 폼</h3><p id="formMessage" class="error">${msg}</p>`;
+        renderFormError(msg, () => processFileUpload(fileData, userChoice));
     }
 }
 
@@ -692,15 +734,12 @@ function createDynamicForm(formData, formTitle) {
     // 엑셀 다운로드 버튼
     let downloadBtnHtml = '';
     if (formTitle) {
-        const displayName = currentSheetInfo.displayName || currentSheetInfo.sheetName;
-        const fileName = `${displayName}_${fileDateStr || ''}.xlsx`;
-        prepareXlsxInAdvance(null, currentSheetInfo.sheetName, fileName, fileDateStr);
         downloadBtnHtml = `<button id="xlsxDownloadBtn"
         onclick="triggerPreparedDownload('xlsxDownloadBtn')"
         disabled
         style="width: auto; margin-left: 5px; margin-right: 5px; font-size:0.9em; padding: 6px 10px; background-color: #ccc; color: #666;
               border: none; border-radius: 4px; font-weight: bold; cursor: not-allowed;">
-        파일 준비중..
+        저장 후 XLSX
       </button>`
     }
 
@@ -728,10 +767,7 @@ function createDynamicForm(formData, formTitle) {
         </button>`;
 
     // 초기화
-    const formMsg = document.getElementById('formMessage');
-    const toggleContainer = document.getElementById('mainToggleContainer');
-    if (formMsg) formMsg.style.display = 'none';
-    if (toggleContainer) toggleContainer.style.display = 'none';
+    setHomeOnlyElementsVisible(false);
 
     const oldForm = document.getElementById('measurementForm');
     if (oldForm) oldForm.remove();
@@ -766,8 +802,6 @@ function createDynamicForm(formData, formTitle) {
             ${spacingSelectHtml} ${resetBtnHtml} ${downloadBtnHtml} ${sortBtnHtml}
         </div>
     `;
-
-    document.getElementById('favoritesSection').classList.add('hidden');
 
     const formElement = document.createElement('form');
     formElement.id = 'measurementForm';
@@ -859,12 +893,36 @@ function createDynamicForm(formData, formTitle) {
     submitButton.textContent = '측정값 저장';
     submitButton.id = 'saveMeasurements';
     submitButton.onclick = saveMeasurements;
+    submitButton.disabled = !currentSheetInfo?.formKey;
+    if (submitButton.disabled) submitButton.textContent = '목록 반영 후 저장';
+
+    const submissionStatus = document.createElement('div');
+    submissionStatus.id = 'submissionStatus';
+    submissionStatus.className = 'submission-status status-idle';
+    submissionStatus.setAttribute('role', 'status');
+    submissionStatus.textContent = currentSheetInfo?.formKey
+        ? '저장 대기'
+        : '업로드 양식을 목록에서 다시 선택한 뒤 저장할 수 있습니다.';
+    formElement.appendChild(submissionStatus);
 
     // 저장 버튼은 드래그 영역 밖이어야 안전하므로 formElement 밖이나 마지막에 배치
     formElement.appendChild(submitButton);
     formContainer.appendChild(formElement);
 
-    formElement.addEventListener('input', () => isMeasurementDirty = true);
+    formElement.addEventListener('input', () => {
+        isMeasurementDirty = true;
+        pendingSubmission = null;
+        preparedDownload = null;
+        const downloadButton = document.getElementById('xlsxDownloadBtn');
+        if (downloadButton) {
+            downloadButton.disabled = true;
+            downloadButton.style.backgroundColor = '#ccc';
+            downloadButton.style.color = '#666';
+            downloadButton.style.cursor = 'not-allowed';
+            downloadButton.textContent = '저장 후 XLSX';
+        }
+        updateSubmissionStatus('입력값이 변경되었습니다.', 'idle');
+    });
     addHomeStateToHistory();
 
     // [4] Sortable 초기화 (비활성화 상태로 시작)
@@ -903,7 +961,9 @@ async function prepareXlsxInAdvance(fileId, sheetName, fileName, fileDateStr) {
     try {
         const res = await fetch(fetchUrl);
         const json = await res.json();
-        if (json.error) throw new Error(json.error);
+        if (!res.ok || json.error || !json.base64 || !json.filename) {
+            throw new Error(json.error || `XLSX_HTTP_${res.status}`);
+        }
 
         preparedDownload = json;
         const btn = document.getElementById('xlsxDownloadBtn');
@@ -914,16 +974,57 @@ async function prepareXlsxInAdvance(fileId, sheetName, fileName, fileDateStr) {
             btn.style.cursor = 'pointer';
             btn.innerText = `⬇ ${fileDateStr} 엑셀`;
         }
+        return true;
     } catch (err) {
         console.error(err);
+        preparedDownload = null;
         const btn = document.getElementById('xlsxDownloadBtn');
         if (btn) {
-            btn.innerText = '준비 실패';
+            btn.disabled = false;
+            btn.innerText = 'XLSX 준비 다시 시도';
         }
+        return false;
     }
 }
 
-function triggerPreparedDownload(buttonId) {
+function xlsxFilename() {
+    const now = new Date();
+    const date = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    return {
+        date,
+        filename: `${currentSheetInfo.displayName || currentSheetInfo.sheetName}_${date}.xlsx`
+    };
+}
+
+async function prepareXlsxAfterSync() {
+    if (!currentSheetInfo) return false;
+    const button = document.getElementById('xlsxDownloadBtn');
+    if (button) {
+        button.disabled = true;
+        button.textContent = 'XLSX 준비 중…';
+        delete button.dataset.prepareRetry;
+    }
+    const { date, filename } = xlsxFilename();
+    const prepared = await prepareXlsxInAdvance(
+        currentSheetInfo.spreadsheetId,
+        currentSheetInfo.sheetName,
+        filename,
+        date
+    );
+    if (prepared) {
+        updateSubmissionStatus('Google Sheet 동기화 및 XLSX 준비 완료', 'synced');
+        return true;
+    }
+    if (button) button.dataset.prepareRetry = 'true';
+    updateSubmissionStatus('Google Sheet 동기화 완료 · XLSX 준비 실패', 'xlsx-error');
+    return false;
+}
+
+async function triggerPreparedDownload(buttonId) {
+    const button = document.getElementById(buttonId);
+    if (!preparedDownload && button?.dataset.prepareRetry === 'true') {
+        await prepareXlsxAfterSync();
+    }
     if (!preparedDownload) {
         alert('파일이 아직 준비되지 않았습니다.');
         return;
@@ -937,50 +1038,153 @@ function triggerPreparedDownload(buttonId) {
 }
 
 // --- 측정값 저장 ---
-async function saveMeasurements() {
-    if (!currentSheetInfo?.sheetName) {
-        showStatus("저장할 시트 정보가 없습니다.", 'error');
-        return;
+function updateSubmissionStatus(message, status = 'idle') {
+    const element = document.getElementById('submissionStatus');
+    if (!element) return;
+    element.className = `submission-status status-${status}`;
+    element.textContent = message;
+}
+
+function createIdempotencyKey() {
+    if (!window.crypto || typeof window.crypto.randomUUID !== 'function') {
+        throw new Error('SECURE_RANDOM_UUID_UNAVAILABLE');
     }
-    showStatus('측정값을 저장 중입니다...', 'loading');
+    return window.crypto.randomUUID();
+}
 
-    const formInputs = document.querySelectorAll('#measurementForm input[type="number"]');
-    const measurementsToSave = Array.from(formInputs).map(input => ({
-        location: input.dataset.location,
-        item: input.dataset.item,
-        value: input.value,
-        unit: input.dataset.unit
+function collectMeasurements() {
+    const inputs = Array.from(document.querySelectorAll('#measurementForm input[type="number"]'));
+    if (!currentSheetInfo || inputs.length !== currentSheetInfo.rowCount) {
+        throw new Error('FORM_STATE_MISMATCH');
+    }
+    return inputs.map((input) => ({
+        uniqueId: input.dataset.uniqueId || '',
+        location: input.dataset.location || '',
+        item: input.dataset.item || '',
+        value: input.value.trim(),
+        unit: input.dataset.unit || ''
     }));
+}
 
+function submissionPayload() {
+    if (!currentSheetInfo?.formKey || !currentSheetInfo?.sourceRevision) {
+        throw new Error('FIRESTORE_FORM_STATE_REQUIRED');
+    }
+    const payload = {
+        schemaVersion: 1,
+        idempotencyKey: pendingSubmission?.idempotencyKey || createIdempotencyKey(),
+        formKey: currentSheetInfo.formKey,
+        sheetName: currentSheetInfo.sheetName,
+        formRevision: currentSheetInfo.sourceRevision,
+        measurements: collectMeasurements()
+    };
+    const semantic = window.BWAReadAdapter.stableStringify({ ...payload, idempotencyKey: null });
+    if (pendingSubmission && pendingSubmission.semantic !== semantic) {
+        payload.idempotencyKey = createIdempotencyKey();
+    }
+    pendingSubmission = { idempotencyKey: payload.idempotencyKey, semantic };
+    return payload;
+}
+
+async function fetchFunctionJson(url, body) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), FUNCTION_REQUEST_TIMEOUT_MS);
     try {
-        const response = await callApi('saveMeasurementsToSheet', 'POST', {
-            sheetName: currentSheetInfo.sheetName,
-            measurements: measurementsToSave
+        const response = await fetch(url, {
+            method: 'POST',
+            cache: 'no-store',
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: controller.signal
         });
-
-        if (response.success) {
-            showStatus(response.message, 'success', 3000);
-            loadFormList();
-            isMeasurementDirty = false;
-
-            // 다운로드 새로고침
-            const displayName = currentSheetInfo.displayName || currentSheetInfo.sheetName;
-            const d = new Date();
-            const fileDateStr = `${d.getFullYear().toString().slice(2, 4)}${('0' + (d.getMonth() + 1)).slice(-2)}${('0' + d.getDate()).slice(-2)}`;
-            const fileName = `${displayName}_${fileDateStr}.xlsx`;
-
-            const btn = document.getElementById('xlsxDownloadBtn');
-            if (btn) {
-                btn.disabled = true;
-                btn.style.backgroundColor = '#ccc';
-                btn.innerText = '파일 준비중..';
-            }
-            prepareXlsxInAdvance(currentSheetInfo.spreadsheetId, currentSheetInfo.sheetName, fileName, fileDateStr);
-
-        } else {
-            showStatus(response.message || '저장 실패', 'error');
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.ok !== true) {
+            throw new Error(payload.error || `HTTP_${response.status}`);
         }
+        return payload.result;
+    } finally {
+        window.clearTimeout(timeout);
+    }
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function getSubmissionStatus(idempotencyKey) {
+    return fetchFunctionJson(GET_SUBMISSION_URL, { idempotencyKey });
+}
+
+async function pollSubmission(idempotencyKey) {
+    const deadline = Date.now() + SUBMISSION_POLL_TIMEOUT_MS;
+    let lastStatus = null;
+    while (Date.now() < deadline) {
+        const status = await getSubmissionStatus(idempotencyKey);
+        lastStatus = status;
+        if (status.status === 'synced') return status;
+        if (status.status === 'failed' && !status.retryable) {
+            throw new Error(status.errorCode || 'SUBMISSION_SYNC_FAILED');
+        }
+        updateSubmissionStatus(
+            status.status === 'failed'
+                ? `일시 오류 후 자동 재시도 대기 · ${status.errorCode || '원인 확인 중'}`
+                : `접수 ${idempotencyKey.slice(0, 8)}… · ${status.status} · 시트 반영 확인 중`,
+            status.status
+        );
+        await sleep(SUBMISSION_POLL_INTERVAL_MS);
+    }
+    throw new Error(`SUBMISSION_STATUS_TIMEOUT:${lastStatus?.status || 'unknown'}`);
+}
+
+async function submitOrRecover(payload) {
+    try {
+        return await fetchFunctionJson(SUBMIT_MEASUREMENTS_URL, payload);
+    } catch (submitError) {
+        updateSubmissionStatus('접수 응답이 불확실하여 같은 요청의 상태를 확인합니다.', 'recovering');
+        try {
+            const status = await getSubmissionStatus(payload.idempotencyKey);
+            return { created: false, status };
+        } catch (statusError) {
+            if (statusError.message !== 'SUBMISSION_NOT_FOUND') throw submitError;
+            return fetchFunctionJson(SUBMIT_MEASUREMENTS_URL, payload);
+        }
+    }
+}
+
+function setSaveButtonBusy(isBusy, label) {
+    const button = document.getElementById('saveMeasurements');
+    if (!button) return;
+    button.disabled = isBusy;
+    if (label) button.textContent = label;
+}
+
+async function saveMeasurements() {
+    let payload;
+    try {
+        payload = submissionPayload();
+        setSaveButtonBusy(true, '저장 중...');
+        updateSubmissionStatus('Firestore에 측정값을 접수하는 중입니다.', 'submitting');
+        showStatus('측정값을 저장 중입니다...', 'loading');
+        const receipt = await submitOrRecover(payload);
+        const initialStatus = receipt.status;
+        const synced = initialStatus.status === 'synced'
+            ? initialStatus
+            : await pollSubmission(payload.idempotencyKey);
+        isMeasurementDirty = false;
+        currentSheetInfo.sourceRevision = synced.sourceRevisionAfterSync || currentSheetInfo.sourceRevision;
+        currentSheetInfo.lastModifiedDate = currentSheetInfo.sourceRevision;
+        pendingSubmission = null;
+        updateSubmissionStatus(
+            `Google Sheet 동기화 완료 · ${synced.updatedCellCount}개 셀 · XLSX 준비 중`,
+            'synced'
+        );
+        setSaveButtonBusy(true, '저장 완료');
+        await loadFormList();
+        await prepareXlsxAfterSync();
+        showStatus('측정값이 Google Sheet에 저장되었습니다.', 'success', 3000);
     } catch (error) {
+        updateSubmissionStatus(`저장 실패 · GAS 재전송 없음 · ${error.message}`, 'failed');
+        setSaveButtonBusy(false, '다시 저장');
         showStatus(`저장 오류: ${error.message}`, 'error');
     }
 }
@@ -991,6 +1195,7 @@ async function loadFormList() {
     const formListStatus = document.getElementById('formListStatus');
     const originalValue = formSelect.value;
 
+    formSelect.disabled = true;
     formListStatus.textContent = '양식 목록 불러오는 중...';
     formListStatus.className = 'loading';
 
@@ -998,6 +1203,7 @@ async function loadFormList() {
         const { items: formList } = await window.BWAProductionRead.loadFormList(
             () => callApi('getFormList', 'GET')
         );
+        formSelect.disabled = false;
         formSelect.innerHTML = '<option value="">-- 양식을 선택해주세요 --</option>';
 
         if (formList && formList.length > 0) {
@@ -1023,8 +1229,7 @@ async function loadFormList() {
         updateFavoriteButtons();
 
     } catch (error) {
-        formListStatus.textContent = `로드 오류: ${error.message}`;
-        formListStatus.className = 'error';
+        renderListFailure(error);
         updateFavoriteButtons();
     }
 }
@@ -1042,22 +1247,11 @@ async function loadSelectedForm() {
 
     // 양식 선택이 없을 경우 (또는 홈 버튼 클릭 시) 초기 화면으로 복귀
     if (!sheetName) {
-        // [수정] 정적 요소 다시 보이기
-        const formMsg = document.getElementById('formMessage');
-        const toggleContainer = document.getElementById('mainToggleContainer');
-        if (formMsg) formMsg.style.display = 'block';
-        if (toggleContainer) toggleContainer.style.display = 'flex'; // switch-container는 flex나 block이나 상관없지만, 원래 스타일에 맞게
-
-        // 기존 폼 제거 (만약 있다면)
-        const oldForm = document.getElementById('measurementForm');
-        if (oldForm) oldForm.remove();
-
-        // 제목 원복
-        let h3 = formContainer.querySelector('h3');
-        if (h3) h3.innerHTML = '측정값 입력 폼';
+        selectedFormRequestId += 1;
+        renderFormMessage('메뉴(☰)를 열어 새 양식을 업로드하거나 기존 양식을 선택해주세요.');
+        setHomeOnlyElementsVisible(true);
 
         currentSheetInfo = null;
-        document.getElementById('favoritesSection').classList.remove('hidden');
         updateHomeButtonVisibility();
 
         // [Issue 2 Fix] 홈 복귀 시 dirty flag 초기화
@@ -1070,6 +1264,12 @@ async function loadSelectedForm() {
         return;
     }
 
+    const requestId = ++selectedFormRequestId;
+    currentSheetInfo = null;
+    pendingSubmission = null;
+    preparedDownload = null;
+    setHomeOnlyElementsVisible(false);
+    updateHomeButtonVisibility();
     showStatus(`${sheetName} 로드 중...`, 'loading');
     isMeasurementDirty = false;
     closeMenu();
@@ -1086,12 +1286,16 @@ async function loadSelectedForm() {
             },
             () => callApi('getFormDataForWeb', 'GET', { sheetName })
         );
+        if (requestId !== selectedFormRequestId) return;
 
         currentSheetInfo = {
             spreadsheetId: selectedOption.dataset.spreadsheetId,
+            formKey: selectedOption.dataset.formKey || null,
             sheetName: sheetName,
             displayName: selectedOption.dataset.displayName,
-            lastModifiedDate: selectedOption.dataset.lastModifiedDate
+            lastModifiedDate: selectedOption.dataset.lastModifiedDate,
+            sourceRevision: selectedOption.dataset.lastModifiedDate,
+            rowCount: formData.length
         };
 
         if (formData && formData.length > 0) {
@@ -1099,16 +1303,18 @@ async function loadSelectedForm() {
             showStatus('로드 완료', 'success', 3000);
             updateHomeButtonVisibility();
         } else {
-            formContainer.innerHTML = '<p class="error">데이터가 없습니다.</p>';
-            // 데이터가 없으면 다시 즐겨찾기 보이기
-            document.getElementById('favoritesSection').classList.remove('hidden');
+            renderFormError('데이터가 없습니다.', loadSelectedForm);
+            setHomeOnlyElementsVisible(true);
         }
 
     } catch (error) {
-        showStatus(`폼 로딩 오류: ${error.message}`, 'error');
+        if (requestId !== selectedFormRequestId) return;
+        const message = `폼 로딩 오류: ${error.message}`;
+        renderFormError(message, loadSelectedForm);
+        showStatus(message, 'error');
         // 에러 발생 시에도 안전하게 초기화
         currentSheetInfo = null;
-        document.getElementById('favoritesSection').classList.remove('hidden');
+        setHomeOnlyElementsVisible(true);
         updateHomeButtonVisibility();
     }
 }
@@ -1328,7 +1534,9 @@ function updateHomeButtonVisibility() {
     else if (homeBtn) homeBtn.classList.remove('visible');
 }
 function addHomeStateToHistory() {
-    history.pushState({ page: 'home' }, 'Home', '?page=home');
+    const url = new URL(window.location.href);
+    url.searchParams.set('page', 'home');
+    window.history.pushState({ page: 'home' }, 'Home', url);
 }
 
 // --- 로컬 스토리지 관련 헬퍼함수 추가 ---

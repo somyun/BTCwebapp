@@ -11,9 +11,12 @@ const MAX_INLINE_DOCUMENT_BYTES = 850 * 1024;
 const MAX_CHUNK_DOCUMENT_BYTES = 700 * 1024;
 
 function stableStringify(value) {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
+  }
   if (value && typeof value === "object") {
-    return `{${Object.keys(value).sort()
+    return `{${Object.keys(value)
+      .sort()
       .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
       .join(",")}}`;
   }
@@ -28,9 +31,24 @@ function serializedBytes(value) {
   return Buffer.byteLength(stableStringify(value), "utf8");
 }
 
+function isOlderRevision(candidate, current) {
+  const candidateTime = Date.parse(candidate);
+  const currentTime = Date.parse(current);
+  return Number.isFinite(candidateTime) && Number.isFinite(currentTime) && candidateTime < currentTime;
+}
+
+function formListRegresses(candidate, current) {
+  if (!Array.isArray(candidate?.items) || !Array.isArray(current?.items)) return false;
+  const currentRevisions = new Map(current.items.map((item) => [item.formKey, item.lastModifiedDate]));
+  return candidate.items.some((item) => currentRevisions.has(item.formKey) &&
+    isOlderRevision(item.lastModifiedDate, currentRevisions.get(item.formKey)));
+}
+
 function requireNonEmptyString(value, fieldName) {
   const normalized = String(value ?? "").trim().normalize("NFC");
-  if (!normalized) throw new Error(`INVALID_${fieldName.toUpperCase()}`);
+  if (!normalized) {
+    throw new Error(`INVALID_${fieldName.toUpperCase()}`);
+  }
   return normalized;
 }
 
@@ -42,14 +60,10 @@ function normalizeOptionalString(value) {
 function normalizeRevision(value) {
   const text = requireNonEmptyString(value, "lastModifiedDate");
   const timestamp = Date.parse(text);
-  if (!Number.isFinite(timestamp)) throw new Error("INVALID_LASTMODIFIEDDATE");
+  if (!Number.isFinite(timestamp)) {
+    throw new Error("INVALID_LASTMODIFIEDDATE");
+  }
   return new Date(timestamp).toISOString();
-}
-
-function isOlderRevision(candidate, current) {
-  const candidateTime = Date.parse(candidate);
-  const currentTime = Date.parse(current);
-  return Number.isFinite(candidateTime) && Number.isFinite(currentTime) && candidateTime < currentTime;
 }
 
 function formKeyForSheet(sheetName) {
@@ -68,6 +82,7 @@ function normalizeFormList(payload) {
     if (entry.spreadsheetId !== PRODUCTION_SPREADSHEET_ID) {
       throw new Error("PRODUCTION_SPREADSHEET_ID_MISMATCH");
     }
+
     const sheetName = requireNonEmptyString(entry.sheetName, "sheetName");
     const formKey = formKeyForSheet(sheetName);
     if (seenSheetNames.has(sheetName) || seenFormKeys.has(formKey)) {
@@ -75,6 +90,7 @@ function normalizeFormList(payload) {
     }
     seenSheetNames.add(sheetName);
     seenFormKeys.add(formKey);
+
     return {
       formKey,
       sheetName,
@@ -83,9 +99,18 @@ function normalizeFormList(payload) {
     };
   });
 
-  const sourceRevision = items.map((item) => item.lastModifiedDate).sort().at(-1);
+  const sourceRevision = items.length
+    ? items.map((item) => item.lastModifiedDate).sort().at(-1)
+    : new Date(0).toISOString();
   const contentHash = hashCanonical({ schemaVersion: SCHEMA_VERSION, sourceRevision, items });
-  return { schemaVersion: SCHEMA_VERSION, sourceRevision, contentHash, itemCount: items.length, items };
+
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    sourceRevision,
+    contentHash,
+    itemCount: items.length,
+    items
+  };
 }
 
 function normalizeValidation(validation) {
@@ -109,12 +134,14 @@ function normalizeRecentInfo(recentInfo) {
 function normalizeFormRows(payload) {
   if (!Array.isArray(payload)) throw new Error("INVALID_FORM_RESPONSE");
   if (!payload.length) throw new Error("EMPTY_FORM_RESPONSE_REJECTED");
+
   const seenUniqueIds = new Set();
   return payload.map((entry) => {
     if (!entry || typeof entry !== "object") throw new Error("INVALID_FORM_ROW");
     const uniqueId = normalizeOptionalString(entry.uniqueId) ?? "";
     if (uniqueId && seenUniqueIds.has(uniqueId)) throw new Error("DUPLICATE_UNIQUE_ID");
     if (uniqueId) seenUniqueIds.add(uniqueId);
+
     return {
       uniqueId,
       location: normalizeOptionalString(entry.location) ?? "",
@@ -137,12 +164,18 @@ function buildFormDocument(formListItem, payload) {
     rowCount: rows.length,
     rows
   };
-  return { ...base, contentHash: hashCanonical(base) };
+  return {
+    ...base,
+    contentHash: hashCanonical(base)
+  };
 }
 
 function buildStoragePlan(formDocument) {
   if (serializedBytes(formDocument) <= MAX_INLINE_DOCUMENT_BYTES) {
-    return { root: { ...formDocument, storageMode: "inline", chunkCount: 0 }, chunks: [] };
+    return {
+      root: { ...formDocument, storageMode: "inline", chunkCount: 0 },
+      chunks: []
+    };
   }
 
   const chunks = [];
@@ -167,9 +200,14 @@ function buildStoragePlan(formDocument) {
     rowCount: rows.length,
     rows
   }));
+
   const { rows, ...manifest } = formDocument;
   return {
-    root: { ...manifest, storageMode: "chunked", chunkCount: chunkDocuments.length },
+    root: {
+      ...manifest,
+      storageMode: "chunked",
+      chunkCount: chunkDocuments.length
+    },
     chunks: chunkDocuments
   };
 }
@@ -179,11 +217,13 @@ async function mapWithConcurrency(values, limit, mapper) {
   let nextIndex = 0;
   async function worker() {
     while (nextIndex < values.length) {
-      const index = nextIndex++;
+      const index = nextIndex;
+      nextIndex += 1;
       results[index] = await mapper(values[index], index);
     }
   }
-  await Promise.all(Array.from({ length: Math.min(limit, values.length) }, worker));
+  const workers = Array.from({ length: Math.min(limit, values.length) }, () => worker());
+  await Promise.all(workers);
   return results;
 }
 
@@ -196,6 +236,7 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
     const url = new URL(PRODUCTION_GAS_API_URL);
     url.searchParams.set("action", action);
     Object.entries(parameters).forEach(([key, value]) => url.searchParams.set(key, String(value)));
+
     const response = await fetchImpl(url, {
       method: "GET",
       redirect: "follow",
@@ -224,8 +265,12 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
   async function persistFormList(formList, force = false) {
     const reference = firestore.collection("publicCache").doc("formList");
     const existing = await reference.get();
-    if (existing.exists && isOlderRevision(formList.sourceRevision, existing.get("sourceRevision"))) {
-      return { status: "stale_skipped", contentHash: existing.get("contentHash"), itemCount: existing.get("itemCount") };
+    if (existing.exists && formListRegresses(formList, existing.data())) {
+      return {
+        status: "stale_skipped",
+        contentHash: existing.get("contentHash"),
+        itemCount: existing.get("itemCount")
+      };
     }
     if (!force && existing.exists && existing.get("contentHash") === formList.contentHash) {
       return { status: "unchanged", contentHash: formList.contentHash, itemCount: formList.itemCount };
@@ -238,10 +283,22 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
     const rootRef = firestore.collection("publicForms").doc(formDocument.formKey);
     const existing = await rootRef.get();
     if (existing.exists && isOlderRevision(formDocument.sourceRevision, existing.get("sourceRevision"))) {
-      return { formKey: formDocument.formKey, sheetName: formDocument.sheetName, status: "stale_skipped", rowCount: existing.get("rowCount"), contentHash: existing.get("contentHash") };
+      return {
+        formKey: formDocument.formKey,
+        sheetName: formDocument.sheetName,
+        status: "stale_skipped",
+        rowCount: existing.get("rowCount"),
+        contentHash: existing.get("contentHash")
+      };
     }
     if (!force && existing.exists && existing.get("contentHash") === formDocument.contentHash) {
-      return { formKey: formDocument.formKey, sheetName: formDocument.sheetName, status: "unchanged", rowCount: formDocument.rowCount, contentHash: formDocument.contentHash };
+      return {
+        formKey: formDocument.formKey,
+        sheetName: formDocument.sheetName,
+        status: "unchanged",
+        rowCount: formDocument.rowCount,
+        contentHash: formDocument.contentHash
+      };
     }
 
     const plan = buildStoragePlan(formDocument);
@@ -253,6 +310,7 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
     }
     await rootRef.set({ ...plan.root, publishedAt: serverTimestamp() });
     await deleteChunks(rootRef, keepChunkIds);
+
     return {
       formKey: formDocument.formKey,
       sheetName: formDocument.sheetName,
@@ -265,32 +323,76 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
   }
 
   async function publishFormList({ force = false } = {}) {
-    return persistFormList(await readSourceFormList(), force);
+    const formList = await readSourceFormList();
+    return persistFormList(formList, force);
   }
 
   async function publishForm({ sheetName, force = false } = {}) {
     const requestedSheetName = requireNonEmptyString(sheetName, "sheetName");
     const formList = await readSourceFormList();
-    const item = formList.items.find((entry) => entry.sheetName === requestedSheetName);
-    if (!item) throw new Error("FORM_NOT_FOUND_IN_PRODUCTION_FORM_LIST");
+    const formListItem = formList.items.find((item) => item.sheetName === requestedSheetName);
+    if (!formListItem) throw new Error("FORM_NOT_FOUND_IN_PRODUCTION_FORM_LIST");
     const payload = await fetchGasJson("getFormDataForWeb", { sheetName: requestedSheetName });
-    return persistForm(buildFormDocument(item, payload), force);
+    return persistForm(buildFormDocument(formListItem, payload), force);
   }
 
-  async function publishChangedForm(item, force) {
-    const reference = firestore.collection("publicForms").doc(item.formKey);
-    const existing = await reference.get();
-    if (!force && existing.exists && existing.get("sourceRevision") === item.lastModifiedDate) {
-      return {
-        formKey: item.formKey,
-        sheetName: item.sheetName,
-        status: "unchanged_revision",
-        rowCount: existing.get("rowCount"),
-        contentHash: existing.get("contentHash")
-      };
+  async function publishSubmissionSnapshot({ formDocument, rows, measurements, sourceRevision }) {
+    if (!formDocument || !Array.isArray(rows) || !Array.isArray(measurements) ||
+        rows.length !== measurements.length || rows.length !== formDocument.rowCount) {
+      throw new Error("INVALID_SUBMISSION_SNAPSHOT");
     }
-    const payload = await fetchGasJson("getFormDataForWeb", { sheetName: item.sheetName });
-    return persistForm(buildFormDocument(item, payload), force);
+    const normalizedRevision = normalizeRevision(sourceRevision);
+    const valuesByIdentity = new Map(measurements.map((measurement) => [
+      measurement.uniqueId
+        ? `id:${measurement.uniqueId}`
+        : `pair:${measurement.location.toLocaleLowerCase("ko-KR")}|${measurement.item.toLocaleLowerCase("ko-KR")}`,
+      measurement
+    ]));
+    const updatedRows = rows.map((row) => {
+      const identity = row.uniqueId
+        ? `id:${row.uniqueId}`
+        : `pair:${row.location.toLocaleLowerCase("ko-KR")}|${row.item.toLocaleLowerCase("ko-KR")}`;
+      const measurement = valuesByIdentity.get(identity);
+      if (!measurement || row.uniqueId !== measurement.uniqueId ||
+          row.location !== measurement.location || row.item !== measurement.item ||
+          row.unit !== measurement.unit) {
+        throw new Error("SUBMISSION_SNAPSHOT_IDENTITY_MISMATCH");
+      }
+      return { ...row, value: normalizeOptionalString(measurement.value) ?? "" };
+    });
+    const formResult = await persistForm(buildFormDocument({
+      formKey: formDocument.formKey,
+      sheetName: formDocument.sheetName,
+      lastModifiedDate: normalizedRevision
+    }, updatedRows), true);
+
+    const listRef = firestore.collection("publicCache").doc("formList");
+    const listSnapshot = await listRef.get();
+    if (!listSnapshot.exists) throw new Error("PUBLISHED_FORM_LIST_NOT_FOUND");
+    const currentList = listSnapshot.data();
+    if (!Array.isArray(currentList.items) || currentList.items.length !== currentList.itemCount) {
+      throw new Error("INVALID_PUBLISHED_FORM_LIST");
+    }
+    let matched = 0;
+    const items = currentList.items.map((item) => {
+      if (item.formKey !== formDocument.formKey) return item;
+      if (item.sheetName !== formDocument.sheetName) {
+        throw new Error("PUBLISHED_FORM_LIST_IDENTITY_MISMATCH");
+      }
+      matched += 1;
+      return { ...item, lastModifiedDate: normalizedRevision };
+    });
+    if (matched !== 1) throw new Error("PUBLISHED_FORM_LIST_ENTRY_NOT_FOUND");
+    const listRevision = items.map((item) => normalizeRevision(item.lastModifiedDate)).sort().at(-1);
+    const listDocument = {
+      schemaVersion: SCHEMA_VERSION,
+      sourceRevision: listRevision,
+      contentHash: hashCanonical({ schemaVersion: SCHEMA_VERSION, sourceRevision: listRevision, items }),
+      itemCount: items.length,
+      items
+    };
+    const listResult = await persistFormList(listDocument, true);
+    return { form: formResult, list: listResult };
   }
 
   async function deleteOrphanedForms(validFormKeys) {
@@ -306,36 +408,44 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
   async function publishAllChangedForms({ force = false } = {}) {
     const startedAt = Date.now();
     const formList = await readSourceFormList();
-    const forms = await mapWithConcurrency(formList.items, 2,
-      (item) => publishChangedForm(item, force));
+    const forms = await mapWithConcurrency(formList.items, 2, async (formListItem) => {
+      const payload = await fetchGasJson("getFormDataForWeb", { sheetName: formListItem.sheetName });
+      return persistForm(buildFormDocument(formListItem, payload), force);
+    });
     const list = await persistFormList(formList, force);
     const removedOrphanCount = await deleteOrphanedForms(new Set(formList.items.map((item) => item.formKey)));
-    const result = { list, forms, removedOrphanCount, durationMs: Date.now() - startedAt };
-    logger.info("Firestore production cache publish completed", {
+    const result = {
+      list,
+      forms,
+      removedOrphanCount,
+      durationMs: Date.now() - startedAt
+    };
+    logger.info("Firestore test cache publish completed", {
       itemCount: formList.itemCount,
       publishedFormCount: forms.filter((form) => form.status === "published").length,
-      skippedFormCount: forms.filter((form) => form.status === "unchanged_revision").length,
       removedOrphanCount,
       durationMs: result.durationMs
     });
     return result;
   }
 
-  return { publishFormList, publishForm, publishAllChangedForms };
+  return { publishFormList, publishForm, publishAllChangedForms, publishSubmissionSnapshot };
 }
 
 module.exports = {
   GAS_TIMEOUT_MS,
   MAX_CHUNK_DOCUMENT_BYTES,
   MAX_INLINE_DOCUMENT_BYTES,
+  SCHEMA_VERSION,
   PRODUCTION_GAS_API_URL,
   PRODUCTION_PROJECT_ID,
   PRODUCTION_SPREADSHEET_ID,
-  SCHEMA_VERSION,
   buildFormDocument,
   buildStoragePlan,
   createPublisher,
   formKeyForSheet,
+  hashCanonical,
+  isOlderRevision,
   normalizeFormList,
   normalizeFormRows,
   serializedBytes,

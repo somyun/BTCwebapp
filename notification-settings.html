@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <title>알림 설정 · ERP 점검 웹앱</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; connect-src https://asia-northeast3-btcwebapp-551bd.cloudfunctions.net https://firebaseinstallations.googleapis.com https://fcmregistrations.googleapis.com; img-src 'self' data: https://somyun.github.io; style-src 'self'; script-src 'self' https://www.gstatic.com; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+    <link rel="stylesheet" href="notifications.css?v=production-notifications-1">
+    <meta name="theme-color" content="#ffffff">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+</head>
+<body>
+    <header class="page-header">
+        <a class="back-link" href="./" aria-label="앱으로 돌아가기">←</a>
+        <h1>알림 설정</h1>
+    </header>
+
+    <main>
+        <section class="card settings-card master-settings-card" aria-labelledby="master-title">
+            <div class="settings-row">
+                <div class="settings-label">
+                    <div class="setting-title-line">
+                        <h2 id="master-title">경조사 알림</h2>
+                        <button class="info-button" type="button" aria-label="경조사 알림 설명"
+                            data-info-title="경조사 알림"
+                            data-info-text="해피휴게더의 새 게시글 중 설정한 키워드와 일치하는 글을 알림으로 받습니다.">i</button>
+                    </div>
+                </div>
+                <label class="settings-switch" aria-label="경조사 알림 켜기 또는 끄기">
+                    <input id="notificationToggleSettings" type="checkbox" role="switch">
+                    <span aria-hidden="true"></span>
+                </label>
+            </div>
+            <p id="toggleStatus" class="setting-feedback" role="status" hidden></p>
+            <div id="permissionGuide" class="permission-guide" hidden>
+                <strong>알림 권한 안내</strong>
+                <p id="permissionGuideText">기기 설정에서 이 웹앱의 알림을 허용해 주세요.</p>
+                <button id="permissionActionBtn" class="secondary-button permission-action-button"
+                    type="button" hidden>알림 권한 허용</button>
+            </div>
+            <details id="iosSettingsGuide" class="ios-settings-guide" hidden>
+                <summary>iPhone 알림 설정 안내</summary>
+                <p>iPhone에서는 Safari 하단의 공유 버튼을 누른 뒤 <strong>홈 화면에 추가</strong>하고, 생성된 아이콘으로 다시 접속해야 알림을 사용할 수 있습니다.</p>
+            </details>
+        </section>
+
+        <fieldset id="notificationDependentSettings" class="dependent-settings" disabled hidden>
+            <legend class="visually-hidden">알림 세부 설정 및 테스트</legend>
+
+            <section class="card settings-card" aria-labelledby="keyword-title">
+                <div class="settings-row keyword-settings-row">
+                    <div class="settings-label">
+                        <div class="setting-title-line">
+                            <h2 id="keyword-title">알림 키워드</h2>
+                            <button class="info-button" type="button" aria-label="알림 키워드 설명"
+                                data-info-title="알림 키워드"
+                                data-info-text="쉼표로 나눈 키워드는 하나만 일치해도 알림을 보내는 OR 조건이며, 공백으로 나눈 단어는 모두 일치해야 하는 AND 조건입니다.">i</button>
+                        </div>
+                    </div>
+                    <div class="keyword-control">
+                        <input type="text" id="keywordInput" placeholder="예: 전기사업소, 경전철 전기"
+                            autocomplete="off" aria-label="알림 키워드">
+                    </div>
+                </div>
+                <p id="keywordStatus" class="setting-feedback" role="status" hidden></p>
+            </section>
+
+            <section class="card settings-card" aria-labelledby="test-title">
+                <div class="settings-row">
+                    <div class="settings-label">
+                        <div class="setting-title-line">
+                            <h2 id="test-title">알림 테스트</h2>
+                            <button class="info-button" type="button" aria-label="알림 테스트 설명"
+                                data-info-title="알림 테스트"
+                                data-info-text="해피휴게더의 가장 최신 게시글을 조회해 설정된 키워드와 관계없이 전송하고, 이 기기의 실제 수신까지 한 번에 점검합니다.">i</button>
+                        </div>
+                    </div>
+                    <button id="selfTestBtn" class="primary-button compact-action" type="button">테스트</button>
+                </div>
+                <p id="selfTestStatus" class="setting-feedback" hidden></p>
+            </section>
+
+            <section class="card" aria-labelledby="health-title">
+                <div class="section-heading">
+                    <div>
+                        <div class="setting-title-line">
+                            <h2 id="health-title">알림 상태</h2>
+                            <button class="info-button" type="button" aria-label="알림 상태 설명"
+                                data-info-title="알림 상태"
+                                data-info-text="서버 발송 기록과 이 브라우저의 실제 수신·표시·클릭 기록을 함께 확인합니다.">i</button>
+                        </div>
+                    </div>
+                    <button id="refreshBtn" class="secondary-button" type="button">새로고침</button>
+                </div>
+                <div id="overallHealth" class="health-banner pending" role="status">확인 중…</div>
+                <dl class="diagnostic-grid">
+                    <div><dt>브라우저 권한</dt><dd id="permissionValue">-</dd></div>
+                    <div><dt>서버 기기 등록</dt><dd id="registrationValue">-</dd></div>
+                    <div><dt>현재 토큰 표식</dt><dd id="tokenValue">-</dd></div>
+                    <div><dt>마지막 일일 점검 수신</dt><dd id="heartbeatValue">-</dd></div>
+                    <div><dt>마지막 알림 수신</dt><dd id="receivedValue">-</dd></div>
+                    <div><dt>마지막 표시 요청 성공</dt><dd id="shownValue">-</dd></div>
+                    <div><dt>마지막 알림 클릭</dt><dd id="clickedValue">-</dd></div>
+                    <div><dt>최근 서버 오류</dt><dd id="failureValue">-</dd></div>
+                </dl>
+            </section>
+        </fieldset>
+    </main>
+
+    <div id="settingsInfoOverlay" class="info-modal-overlay" hidden>
+        <section class="info-modal" role="dialog" aria-modal="true" aria-labelledby="settingsInfoTitle" tabindex="-1">
+            <div class="info-modal-heading">
+                <h2 id="settingsInfoTitle"></h2>
+                <button id="closeSettingsInfoBtn" class="info-modal-close" type="button" aria-label="설명 닫기">×</button>
+            </div>
+            <p id="settingsInfoText"></p>
+        </section>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js"></script>
+    <script src="./notification-store.js?v=production-notifications-1"></script>
+    <script src="./notification-settings.js?v=production-notifications-1"></script>
+</body>
+</html>

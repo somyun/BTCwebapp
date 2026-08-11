@@ -77,10 +77,9 @@ test('production default serves the form list from Firestore when available', as
     assert.equal(result.items[0].displayName, 'FORM_A');
     assert.equal(gasFetchCount, 0);
     assert.equal(window.BWA_PRODUCTION_READ_STATE.source, 'firestore');
-    assert.equal(window.BWA_PRODUCTION_READ_STATE.fallbackCount, 0);
 });
 
-test('production default attempts Firestore and falls back to GAS when unavailable', async () => {
+test('production default shows a Firestore error without calling GAS when unavailable', async () => {
     let fetchCount = 0;
     const window = loadRuntime('', async () => {
         fetchCount += 1;
@@ -90,31 +89,28 @@ test('production default attempts Firestore and falls back to GAS when unavailab
             json: async () => ({})
         };
     });
-    const gasItems = [{
-        sheetName: 'FORM_A',
-        spreadsheetId: window.BWAProductionRead.CONFIG.spreadsheetId,
-        lastModifiedDate: '2026-07-29T00:00:00.000Z'
-    }];
-    const result = await window.BWAProductionRead.loadFormList(async () => gasItems);
-    assert.equal(result.servedBy, 'gas-fallback');
-    assert.deepEqual(result.items, gasItems);
+    let gasFetchCount = 0;
+    await assert.rejects(window.BWAProductionRead.loadFormList(async () => {
+        gasFetchCount += 1;
+        return [];
+    }), /HTTP_503/);
     assert.equal(fetchCount, 1);
+    assert.equal(gasFetchCount, 0);
     assert.equal(window.BWA_PRODUCTION_READ_STATE.source, 'firestore');
-    assert.equal(window.BWA_PRODUCTION_READ_STATE.fallbackCount, 1);
 });
 
-test('Firestore mode falls back to GAS when production cache is unavailable', async () => {
+test('Firestore mode fails closed when production cache is unavailable', async () => {
     const window = loadRuntime('?readSource=firestore', async () => ({
         ok: false,
         status: 404,
         json: async () => ({})
     }));
-    const gasItems = [{ sheetName: 'FORM_A' }];
-    const result = await window.BWAProductionRead.loadFormList(async () => gasItems);
-    assert.equal(result.servedBy, 'gas-fallback');
-    assert.deepEqual(result.items, gasItems);
-    assert.equal(window.BWA_PRODUCTION_READ_STATE.fallbackCount, 1);
-    assert.equal(window.BWA_PRODUCTION_READ_STATE.lastFallback.operation, 'formList');
+    let gasFetchCount = 0;
+    await assert.rejects(window.BWAProductionRead.loadFormList(async () => {
+        gasFetchCount += 1;
+        return [];
+    }), /HTTP_404/);
+    assert.equal(gasFetchCount, 0);
 });
 
 test('invalid read source cannot bypass the Firestore default', async () => {
@@ -125,6 +121,10 @@ test('invalid read source cannot bypass the Firestore default', async () => {
 test('hosted production ignores query-string read source overrides', async () => {
     const window = loadRuntime('?readSource=gas', undefined, 'somyun.github.io');
     assert.equal(window.BWA_PRODUCTION_READ_STATE.source, 'firestore');
+});
+
+test('production runtime contains no GAS fallback or read-source switch', () => {
+    assert.doesNotMatch(source, /gasFallback|readSource|shadow|gas-fallback/);
 });
 
 test('adapter rejects a GAS list from a different spreadsheet', () => {

@@ -2,13 +2,11 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // GitHub Pages may read only the published form-list cache.
     match /publicCache/{documentId} {
       allow read: if true;
       allow write: if false;
     }
 
-    // Published forms and their oversized-document chunks are read-only.
     match /publicForms/{formKey} {
       allow read: if true;
       allow write: if false;
@@ -19,7 +17,32 @@ service cloud.firestore {
       }
     }
 
-    // Everything else remains private, including future submission data.
+    // T5 submissions are accepted and queried only through validated HTTPS Functions.
+    match /measurementSubmissions/{submissionId} {
+      allow read, write: if false;
+    }
+
+    match /systemConfig/{documentId} {
+      allow read, write: if false;
+    }
+
+    match /submissionRateLimits/{documentId} {
+      allow read, write: if false;
+    }
+
+    // T7 device credentials, full FCM tokens, and delivery receipts are server-only.
+    match /notificationDevices/{deviceId} {
+      allow read, write: if false;
+
+      match /receipts/{eventId} {
+        allow read, write: if false;
+      }
+    }
+
+    match /notificationTokenOwners/{tokenHash} {
+      allow read, write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

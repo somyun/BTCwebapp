@@ -208,6 +208,34 @@ header {
   border-radius: 2px;
 }
 
+.notification-history-btn {
+  flex: 0 0 38px;
+  margin-right: 2px;
+  color: #1f4f91;
+  text-decoration: none;
+}
+
+.notification-history-btn svg {
+  width: 25px;
+  height: 25px;
+}
+
+.notification-history-btn .notification-off-mark {
+  display: none;
+  fill: none;
+  stroke: #b42318;
+  stroke-linecap: round;
+  stroke-width: 2.4;
+}
+
+.notification-history-btn.notification-off {
+  color: #7a8493;
+}
+
+.notification-history-btn.notification-off .notification-off-mark {
+  display: block;
+}
+
 .sidenav {
   display: block;
   position: fixed;
@@ -326,13 +354,40 @@ header {
   box-sizing: border-box;
 }
 
-.favorites-section.hidden {
-  max-height: 0;
-  opacity: 0;
-  margin: 0 auto;
-  /* 숨겨질 때 마진도 제거 */
-  padding-top: 0;
-  padding-bottom: 0;
+.home-only-hidden {
+  display: none !important;
+}
+
+.read-retry-button {
+  margin-top: 12px;
+  padding: 9px 14px;
+}
+
+.read-retry-button.compact {
+  margin-top: 7px;
+  padding: 6px 9px;
+  font-size: 12px;
+}
+
+.submission-status {
+  display: none;
+}
+
+.notification-settings-link {
+  display: block;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f3f6fb;
+  color: #1f4f91;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+}
+
+.notification-settings-link:hover,
+.notification-settings-link:focus-visible {
+  background: #e6eef9;
 }
 
 .favorites-section h3 {

@@ -32,8 +32,15 @@ class FakeDocumentReference {
     return new FakeSnapshot(this, this.firestore.documents.get(this.path));
   }
 
-  async set(data) {
-    this.firestore.documents.set(this.path, clone(data));
+  async set(data, options = {}) {
+    const existing = this.firestore.documents.get(this.path) || {};
+    this.firestore.documents.set(this.path, clone(options.merge ? { ...existing, ...data } : data));
+  }
+
+  async update(data) {
+    if (!this.firestore.documents.has(this.path)) throw new Error("DOCUMENT_NOT_FOUND");
+    const existing = this.firestore.documents.get(this.path);
+    this.firestore.documents.set(this.path, clone({ ...existing, ...data }));
   }
 
   async delete() {
@@ -68,6 +75,33 @@ class FakeCollectionReference {
   }
 }
 
+class FakeTransaction {
+  constructor(firestore) {
+    this.firestore = firestore;
+  }
+
+  get(reference) {
+    return reference.get();
+  }
+
+  create(reference, data) {
+    if (this.firestore.documents.has(reference.path)) throw new Error("ALREADY_EXISTS");
+    this.firestore.documents.set(reference.path, clone(data));
+  }
+
+  set(reference, data, options) {
+    return reference.set(data, options);
+  }
+
+  update(reference, data) {
+    return reference.update(data);
+  }
+
+  delete(reference) {
+    return reference.delete();
+  }
+}
+
 class FakeFirestore {
   constructor(seed = {}) {
     this.documents = new Map(Object.entries(seed).map(([path, data]) => [path, clone(data)]));
@@ -75,6 +109,10 @@ class FakeFirestore {
 
   collection(name) {
     return new FakeCollectionReference(this, name);
+  }
+
+  runTransaction(handler) {
+    return handler(new FakeTransaction(this));
   }
 }
 
