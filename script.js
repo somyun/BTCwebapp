@@ -735,7 +735,6 @@ function createDynamicForm(formData, formTitle) {
     let downloadBtnHtml = '';
     if (formTitle) {
         downloadBtnHtml = `<button id="xlsxDownloadBtn"
-        onclick="triggerPreparedDownload('xlsxDownloadBtn')"
         disabled
         style="width: auto; margin-left: 5px; margin-right: 5px; font-size:0.9em; padding: 6px 10px; background-color: #ccc; color: #666;
               border: none; border-radius: 4px; font-weight: bold; cursor: not-allowed;">
@@ -746,7 +745,7 @@ function createDynamicForm(formData, formTitle) {
     // [1] 간격 조절 콤보박스 (평소에는 숨김 display: none)
     // 4px(좁게), 8px(보통), 12px(넓게) 옵션 제공
     const spacingSelectHtml = `
-        <select id="spacingSelect" onchange="handleSpacingChange(this.value)" 
+        <select id="spacingSelect"
             style="display: none; width: auto; padding: 6px 10px; margin: 10px 0 10px 0 ; font-size: 0.9em; align-items: center; justify-content: center; vertical-align: bottom; border: 1px solid rgb(204, 204, 204); border-radius: 4px; background: rgb(255, 255, 255);">
             <option value="4">좁게</option>
             <option value="8">보통</option>
@@ -756,7 +755,7 @@ function createDynamicForm(formData, formTitle) {
 
     // [2]정렬 초기화 버튼 (평소에는 숨겨져 있음 display: none)
     const resetBtnHtml = `
-        <button id="resetOrderBtn" type="button" onclick="handleResetOrder()" title="초기 순서로 복원"
+        <button id="resetOrderBtn" type="button" title="초기 순서로 복원"
             style="display: none; width: auto; padding: 6px 10px; margin-left: 5px; margin-right: 5px; font-size:0.9em; align-items: center; justify-content: center;
                    background:transparent; color: #666; border: 1px solid #ffcdd2; border-radius: 4px;">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -781,7 +780,7 @@ function createDynamicForm(formData, formTitle) {
 
     // 순서 변경 버튼 HTML
     const sortBtnHtml = `
-        <button id="toggleSortBtn" type="button" onclick="toggleSortMode()" 
+        <button id="toggleSortBtn" type="button"
             style="margin-left:auto; width:auto; padding: 6px 10px; background:transparent; color:#333; border:1px solid #ccc; font-size:0.9em;">
             ⇅ 정렬
         </button>`;
@@ -802,6 +801,15 @@ function createDynamicForm(formData, formTitle) {
             ${spacingSelectHtml} ${resetBtnHtml} ${downloadBtnHtml} ${sortBtnHtml}
         </div>
     `;
+
+    document.getElementById('xlsxDownloadBtn')?.addEventListener('click', () => {
+        triggerPreparedDownload('xlsxDownloadBtn');
+    });
+    document.getElementById('spacingSelect')?.addEventListener('change', (event) => {
+        handleSpacingChange(event.target.value);
+    });
+    document.getElementById('resetOrderBtn')?.addEventListener('click', handleResetOrder);
+    document.getElementById('toggleSortBtn')?.addEventListener('click', toggleSortMode);
 
     const formElement = document.createElement('form');
     formElement.id = 'measurementForm';

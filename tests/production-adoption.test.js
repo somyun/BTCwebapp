@@ -57,9 +57,17 @@ test('legacy notification devices can be imported and silently claimed by the sa
 });
 
 test('production cache versions force the notification migration code and worker to refresh', () => {
-    assert.match(read('index.html'), /script\.js\?v=production-adoption-2/);
+    assert.match(read('index.html'), /script\.js\?v=production-adoption-3/);
     assert.match(read('notification-settings.html'), /notification-settings\.js\?v=production-notifications-2/);
     assert.match(read('script.js'), /firebase-messaging-sw\.js\?v=production-notifications-2/);
+});
+
+test('dynamic form header controls use CSP-safe event listeners', () => {
+    const script = read('script.js');
+    assert.doesNotMatch(script, /on(?:click|change)=/);
+    assert.match(script, /getElementById\('toggleSortBtn'\)\?\.addEventListener\('click', toggleSortMode\)/);
+    assert.match(script, /getElementById\('spacingSelect'\)\?\.addEventListener\('change'/);
+    assert.match(script, /getElementById\('resetOrderBtn'\)\?\.addEventListener\('click', handleResetOrder\)/);
 });
 
 test('the header hamburger overrides global full-width button styles', () => {
