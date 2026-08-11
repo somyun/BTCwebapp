@@ -62,6 +62,14 @@ test('production cache versions force the notification migration code and worker
     assert.match(read('script.js'), /firebase-messaging-sw\.js\?v=production-notifications-2/);
 });
 
+test('the header hamburger overrides global full-width button styles', () => {
+    const index = read('index.html');
+    const style = read('style.css');
+    assert.match(index, /style\.css\?v=production-adoption-2/);
+    assert.match(style, /\.hamburger-menu\s*\{[\s\S]*?width:\s*38px;[\s\S]*?height:\s*38px;[\s\S]*?margin:\s*0;[\s\S]*?background:\s*transparent;/);
+    assert.match(style, /\.hamburger-menu:hover\s*\{[\s\S]*?background:\s*#f0f0f0;/);
+});
+
 test('test-only environment values do not leak into adopted production code', () => {
     const adoptedFiles = [
         'firebase-messaging-sw.js',
