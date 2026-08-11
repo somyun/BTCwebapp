@@ -69,6 +69,10 @@ test('legacy notification UI is absent and removed again after browser history r
     assert.doesNotMatch(index, /id="(?:notificationToggle|notificationToggleMain|mainToggleContainer|keywordModalOverlay|keywordModal)"/);
     assert.match(script, /const LEGACY_NOTIFICATION_SELECTORS = \[/);
     assert.match(script, /window\.addEventListener\('pageshow',/);
+    assert.match(script, /const APP_DOCUMENT_VERSION = 'production-adoption-4';/);
+    assert.match(script, /window\.history\.replaceState\(window\.history\.state, '', url\)/);
+    assert.match(read('notifications.html'), /href="\.\/\?app=production-adoption-4"/);
+    assert.match(read('notification-settings.html'), /href="\.\/\?app=production-adoption-4"/);
     assert.doesNotMatch(styles, /\.keyword-modal-(?:overlay|content)|\.switch-container/);
 });
 

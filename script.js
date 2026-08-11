@@ -47,6 +47,7 @@ let isSortMode = false;
 let isMapViewActive = false;
 let selectedFormRequestId = 0;
 let xlsxPreparationId = 0;
+const APP_DOCUMENT_VERSION = 'production-adoption-4';
 
 // 양식 선택 전 홈 화면에서만 보이는 요소를 한 곳에서 관리합니다.
 // 테스트 앱에도 같은 목록과 전환 함수를 두어 화면 상태가 서로 어긋나지 않게 합니다.
@@ -68,9 +69,18 @@ function removeLegacyNotificationElements() {
     document.querySelectorAll(LEGACY_NOTIFICATION_SELECTORS.join(',')).forEach((element) => element.remove());
 }
 
+function markCurrentDocumentVersion() {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('app') === APP_DOCUMENT_VERSION) return;
+    url.searchParams.set('app', APP_DOCUMENT_VERSION);
+    window.history.replaceState(window.history.state, '', url);
+}
+
 removeLegacyNotificationElements();
+markCurrentDocumentVersion();
 window.addEventListener('pageshow', () => {
     removeLegacyNotificationElements();
+    markCurrentDocumentVersion();
     closeMenu();
 });
 
