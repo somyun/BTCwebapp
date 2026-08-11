@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <title>알림 내역 · ERP 점검 웹앱</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; connect-src https://asia-northeast3-btcwebapp-551bd.cloudfunctions.net https://firebaseinstallations.googleapis.com https://fcmregistrations.googleapis.com; img-src 'self' data: https://somyun.github.io; style-src 'self'; script-src 'self' https://www.gstatic.com; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+    <link rel="stylesheet" href="notifications.css?v=production-notifications-1">
+    <meta name="theme-color" content="#ffffff">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+</head>
+<body>
+    <header class="page-header">
+        <a class="back-link" href="./" aria-label="앱으로 돌아가기">←</a>
+        <h1>알림 내역</h1>
+    </header>
+
+    <main>
+        <nav class="history-actions" aria-label="알림 바로가기">
+            <a class="history-action-button settings-page-button" href="./notification-settings.html?v=production-notifications-1">
+                <span>알림 설정</span>
+            </a>
+            <a class="history-action-button happy-link-button" href="https://www.humetro.busan.kr/event.do"
+                target="_blank" rel="noopener noreferrer">
+                <span>해피휴게더</span>
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M14 3h7v7M21 3l-9.5 9.5" />
+                    <path d="M19 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6" />
+                </svg>
+            </a>
+        </nav>
+
+        <section class="card history-card" aria-label="알림 내역">
+            <ol id="notificationHistory" class="history-list"></ol>
+            <p id="emptyHistory" class="empty-state" hidden>아직 이 브라우저에 기록된 알림이 없습니다.</p>
+        </section>
+
+        <p class="privacy-note">알림 제목·본문·링크는 이 브라우저에만 저장됩니다.<br>최근 100건까지 보관합니다.</p>
+    </main>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js"></script>
+    <script src="./notification-store.js?v=production-notifications-1"></script>
+    <script src="./notifications.js?v=production-notifications-1"></script>
+</body>
+</html>

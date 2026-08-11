@@ -9,22 +9,13 @@
         projectId: 'btcwebapp-551bd',
         apiKey: 'AIzaSyD4eSO-idxDepO8knAqLLzxX5ZfNCy9NAM',
         spreadsheetId: '19rgzRnTQtOwwW7Ts5NbBuItNey94dAZsEnO7Tk0cm6s',
-        requestTimeoutMs: 10000,
-        gasFallback: true
+        requestTimeoutMs: 10000
     });
-    const ALLOWED_SOURCES = new Set(['gas', 'shadow', 'firestore']);
-    const requestedSource = new URLSearchParams(root.location.search).get('readSource');
-    const isLocalPreview = ['127.0.0.1', 'localhost'].includes(root.location.hostname);
-    const source = isLocalPreview && ALLOWED_SOURCES.has(requestedSource)
-        ? requestedSource
-        : CONFIG.defaultSource;
     const firestoreBase = `https://firestore.googleapis.com/v1/projects/${CONFIG.projectId}` +
         '/databases/(default)/documents';
     const state = {
-        source,
-        fallbackCount: 0,
-        requests: [],
-        shadow: { formList: { status: 'idle' }, forms: {} }
+        source: CONFIG.defaultSource,
+        requests: []
     };
     let formsBySheetName = new Map();
 
@@ -117,78 +108,15 @@
         return { document, rows: normalizedRows };
     }
 
-    async function compareFormListInBackground(gasPayload, firestorePromise) {
-        state.shadow.formList = { status: 'pending' };
-        try {
-            const { document } = await firestorePromise;
-            const comparison = adapter.compareFormLists(
-                gasPayload,
-                document,
-                CONFIG.spreadsheetId
-            );
-            state.shadow.formList = {
-                status: comparison.matched ? 'matched' : 'mismatch',
-                gasCount: comparison.gasCount,
-                firestoreCount: comparison.firestoreCount
-            };
-        } catch (error) {
-            state.shadow.formList = { status: 'error', error: error.message };
-        }
+    async function loadFormList() {
+        const { items } = await fetchFormListDocument();
+        return { items, servedBy: 'firestore' };
     }
 
-    async function compareFormInBackground(sheetName, gasRows, firestorePromise) {
-        state.shadow.forms[sheetName] = { status: 'pending' };
-        try {
-            const firestoreForm = await firestorePromise;
-            const comparison = adapter.compareFormRows(gasRows, firestoreForm.rows);
-            state.shadow.forms[sheetName] = {
-                status: comparison.matched ? 'matched' : 'mismatch',
-                gasCount: comparison.gasCount,
-                firestoreCount: comparison.firestoreCount,
-                firstMismatchIndex: comparison.firstMismatchIndex
-            };
-        } catch (error) {
-            state.shadow.forms[sheetName] = { status: 'error', error: error.message };
-        }
-    }
-
-    async function loadFormList(gasFetch) {
-        if (source === 'gas') return { items: await gasFetch(), servedBy: 'gas' };
-        if (source === 'shadow') {
-            const firestorePromise = fetchFormListDocument();
-            const gasPayload = await gasFetch();
-            void compareFormListInBackground(gasPayload, firestorePromise);
-            return { items: gasPayload, servedBy: 'gas' };
-        }
-        try {
-            const { items } = await fetchFormListDocument();
-            return { items, servedBy: 'firestore' };
-        } catch (error) {
-            if (!CONFIG.gasFallback) throw error;
-            state.fallbackCount += 1;
-            state.lastFallback = { operation: 'formList', error: error.message };
-            return { items: await gasFetch(), servedBy: 'gas-fallback' };
-        }
-    }
-
-    async function loadForm(sheetName, selectedForm, gasFetch) {
-        if (source === 'gas') return { rows: await gasFetch(), servedBy: 'gas' };
+    async function loadForm(sheetName, selectedForm) {
         const formListItem = formsBySheetName.get(sheetName) || selectedForm;
-        if (source === 'shadow') {
-            const firestorePromise = fetchFormDocument(formListItem);
-            const gasRows = await gasFetch();
-            void compareFormInBackground(sheetName, gasRows, firestorePromise);
-            return { rows: gasRows, servedBy: 'gas' };
-        }
-        try {
-            const result = await fetchFormDocument(formListItem);
-            return { rows: result.rows, servedBy: 'firestore', document: result.document };
-        } catch (error) {
-            if (!CONFIG.gasFallback) throw error;
-            state.fallbackCount += 1;
-            state.lastFallback = { operation: 'form', sheetName, error: error.message };
-            return { rows: await gasFetch(), servedBy: 'gas-fallback' };
-        }
+        const result = await fetchFormDocument(formListItem);
+        return { rows: result.rows, servedBy: 'firestore', document: result.document };
     }
 
     root.BWA_PRODUCTION_READ_STATE = state;
