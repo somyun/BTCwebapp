@@ -15,6 +15,16 @@
       "collectionGroup": "chunks",
       "fieldPath": "rows",
       "indexes": []
+    },
+    {
+      "collectionGroup": "measurementSubmissions",
+      "fieldPath": "measurements",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "measurementSubmissions",
+      "fieldPath": "requestHash",
+      "indexes": []
     }
   ]
 }
