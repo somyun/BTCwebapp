@@ -19,16 +19,19 @@ measurement submission pipeline, and notification backend for project
 
 The submission gate can additionally contain `allowedFormKeys` and
 `allowedSheetNames`. Non-empty arrays restrict writes to the listed forms. The
-notification dispatch gate must remain disabled until the GAS bridge is approved,
-deployed, and the legacy GAS notification trigger is disabled.
+notification dispatch gate must remain disabled until direct Humetro collection,
+legacy device migration, and the notification baseline have been verified, and the
+legacy GAS notification trigger is disabled.
 
 ## Required cloud setup
 
 - Enable Google Sheets API.
 - Grant the Functions service account edit access to the production spreadsheet.
 - Create `BWA_PUBLISHER_TOKEN` for administrator endpoints.
-- Create `HUMETRO_BRIDGE_TOKEN` only when the separately reviewed GAS bridge is
-  ready, using the same random value in the GAS Script Property.
+- Create `HUMETRO_ID` and `HUMETRO_PW` in Secret Manager. Scheduled collection
+  logs in to Humetro directly; credentials never enter Firestore or browser code.
+- Import active legacy rows from the `FCM_Tokens` sheet with the protected admin
+  migration endpoint. The sheet remains an untouched rollback reference.
 - Deploy Functions, Firestore Rules, and indexes while both gates remain OFF.
 
 ## Verification

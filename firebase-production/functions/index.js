@@ -22,10 +22,12 @@ const {
 } = require("./lib/humetro-client");
 const { createSheetsGateway } = require("./lib/sheets-sync");
 const { createSynchronizer } = require("./lib/synchronizer");
+const { createLegacyNotificationMigrator } = require("./lib/legacy-notification-migration");
 
 const REGION = "asia-northeast3";
 const PUBLISHER_ADMIN_TOKEN = defineSecret("BWA_PUBLISHER_TOKEN");
-const HUMETRO_BRIDGE_TOKEN = defineSecret("HUMETRO_BRIDGE_TOKEN");
+const HUMETRO_ID = defineSecret("HUMETRO_ID");
+const HUMETRO_PW = defineSecret("HUMETRO_PW");
 const PUBLIC_CORS = ["https://somyun.github.io"];
 const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 
@@ -81,15 +83,30 @@ function getNotificationService() {
       messaging: getMessaging(getAdminApp()),
       serverTimestamp: () => FieldValue.serverTimestamp(),
       latestPostProvider: createHumetroLatestPostProvider({
-        bridgeTokenProvider: () => HUMETRO_BRIDGE_TOKEN.value()
+        credentialsProvider: () => ({ userId: HUMETRO_ID.value(), password: HUMETRO_PW.value() })
       }),
       boardPostsProvider: createHumetroBoardPostsProvider({
-        bridgeTokenProvider: () => HUMETRO_BRIDGE_TOKEN.value()
+        credentialsProvider: () => ({ userId: HUMETRO_ID.value(), password: HUMETRO_PW.value() })
       }),
       logger
     });
   }
   return notificationService;
+}
+
+let legacyMigratorPromise;
+async function getLegacyNotificationMigrator() {
+  if (!legacyMigratorPromise) {
+    legacyMigratorPromise = (async () => {
+      const authClient = await new GoogleAuth({ scopes: [SHEETS_SCOPE] }).getClient();
+      return createLegacyNotificationMigrator({
+        firestore: getFirestoreClient(),
+        sheetsGateway: createSheetsGateway({ authClient }),
+        serverTimestamp: () => FieldValue.serverTimestamp()
+      });
+    })();
+  }
+  return legacyMigratorPromise;
 }
 
 let synchronizerPromise;
@@ -181,9 +198,9 @@ function publicEndpoint(handler, release = "t5-async-save", { secrets = [] } = {
   });
 }
 
-function manualAdmin(handler) {
+function manualAdmin(handler, { secrets = [] } = {}) {
   return onRequest({
-    secrets: [PUBLISHER_ADMIN_TOKEN],
+    secrets: [PUBLISHER_ADMIN_TOKEN, ...secrets],
     cors: false,
     labels: { "bwa-release": "t5-async-save" }
   }, async (request, response) => {
@@ -246,7 +263,7 @@ exports.acknowledgeNotification = publicEndpoint((body) =>
 
 exports.sendNotificationSelfTest = publicEndpoint((body) =>
   getNotificationService().sendSelfTest(body), "t11-notification-pages", {
-    secrets: [HUMETRO_BRIDGE_TOKEN]
+    secrets: [HUMETRO_ID, HUMETRO_PW]
   });
 
 exports.sendNotificationHeartbeatScheduled = onSchedule({
@@ -263,7 +280,7 @@ exports.sendHappyHugetherNotificationsScheduled = onSchedule({
   schedule: "every 10 minutes",
   timeZone: "Asia/Seoul",
   retryCount: 0,
-  secrets: [HUMETRO_BRIDGE_TOKEN],
+  secrets: [HUMETRO_ID, HUMETRO_PW],
   labels: { "bwa-release": "t14-firebase-notifications" }
 }, async () => {
   const gate = await getFirestoreClient().collection("systemConfig").doc("notificationDispatch").get();
@@ -308,3 +325,18 @@ exports.setNotificationDispatchGate = manualAdmin(async (body) => {
   }, { merge: true });
   return { enabled };
 });
+
+exports.migrateLegacyNotificationDevices = manualAdmin(async (body) => {
+  const migrator = await getLegacyNotificationMigrator();
+  return migrator.migrate({ dryRun: body.dryRun !== false });
+});
+
+exports.previewHappyHugetherNotificationTargets = manualAdmin(
+  () => getNotificationService().previewLatestBoardPostTargets(),
+  { secrets: [HUMETRO_ID, HUMETRO_PW] }
+);
+
+exports.initializeHappyHugetherNotificationBaseline = manualAdmin(
+  () => getNotificationService().initializeBoardPostBaseline(),
+  { secrets: [HUMETRO_ID, HUMETRO_PW] }
+);

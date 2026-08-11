@@ -3,10 +3,13 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
+  HUMETRO_BOARD_URL,
+  HUMETRO_LOGIN_URL,
   createHumetroBoardPostsProvider,
   createHumetroLatestPostProvider,
   normalizeBoardPosts,
-  normalizeLatestPost
+  normalizeLatestPost,
+  parseBoardHtml
 } = require("../lib/humetro-client");
 
 const sourcePayload = {
@@ -18,22 +21,32 @@ const sourcePayload = {
   }
 };
 
-test("normalizes the latest post returned by the isolated GAS", () => {
+function html(posts = [sourcePayload.data]) {
+  return `<table><tbody>${posts.map((post) => `<tr><th>${post.id}</th><td class="subject"><a href="${post.link}">${post.title}</a></td></tr>`).join("")}</tbody></table>`;
+}
+
+function response({ status = 200, body = "", cookies = [] } = {}) {
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    headers: { getSetCookie: () => cookies },
+    async arrayBuffer() { return new TextEncoder().encode(body).buffer; }
+  };
+}
+
+test("normalizes and validates a latest Happy Hugether post", () => {
   assert.deepEqual(normalizeLatestPost(sourcePayload), {
     id: 6042,
     title: "최신 경조사 게시글",
     link: sourcePayload.data.link
   });
-});
-
-test("rejects a latest-post link outside the Happy Hugether host", () => {
   assert.throws(() => normalizeLatestPost({
     ...sourcePayload,
     data: { ...sourcePayload.data, link: "https://example.com/fake" }
   }), { message: "HUMETRO_INVALID_LATEST_POST_LINK" });
 });
 
-test("normalizes, sorts, and deduplicates recent board posts", () => {
+test("normalizes, sorts, and deduplicates recent posts", () => {
   const older = { ...sourcePayload.data, id: 6041, title: "이전 게시글", link: sourcePayload.data.link.replace("6042", "6041") };
   assert.deepEqual(normalizeBoardPosts({ success: true, data: [sourcePayload.data, older, sourcePayload.data] }), [
     { id: 6041, title: "이전 게시글", link: older.link },
@@ -41,66 +54,53 @@ test("normalizes, sorts, and deduplicates recent board posts", () => {
   ]);
 });
 
-test("requests the keyword-independent latest-post action from test GAS", async () => {
-  let requestedUrl = "";
-  let requestedOptions;
-  const provider = createHumetroLatestPostProvider({
-    gasApiUrl: "https://script.google.com/macros/s/test/exec",
-    bridgeTokenProvider: async () => "b".repeat(64),
-    fetchImpl: async (url, options) => {
-      requestedUrl = String(url);
-      requestedOptions = options;
-      return { ok: true, async json() { return sourcePayload; } };
-    }
-  });
-  const post = await provider();
-  assert.equal(new URL(requestedUrl).search, "");
-  assert.equal(requestedOptions.method, "POST");
-  assert.deepEqual(JSON.parse(requestedOptions.body), {
-    action: "getLatestBoardPostForNotificationTest",
-    bridgeToken: "b".repeat(64)
-  });
-  assert.equal(post.id, 6042);
+test("parses the production board table without a GAS bridge", () => {
+  assert.deepEqual(parseBoardHtml(html()), [{
+    id: 6042,
+    title: "최신 경조사 게시글",
+    link: sourcePayload.data.link
+  }]);
 });
 
-test("requests the private recent-post list for scheduled dispatch", async () => {
-  let requestedOptions;
+test("logs in directly, preserves the session cookie, and reads recent posts", async () => {
+  const calls = [];
   const provider = createHumetroBoardPostsProvider({
-    gasApiUrl: "https://script.google.com/macros/s/test/exec",
-    bridgeTokenProvider: async () => "b".repeat(64),
-    fetchImpl: async (_url, options) => {
-      requestedOptions = options;
-      return { ok: true, async json() { return { success: true, data: [sourcePayload.data] }; } };
+    credentialsProvider: async () => ({ userId: "employee", password: "secret" }),
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      if (String(url) === HUMETRO_LOGIN_URL) {
+        return response({ status: 302, cookies: ["JSESSIONID=session123; Path=/; HttpOnly"] });
+      }
+      return response({ body: html() });
     }
   });
   const posts = await provider();
-  assert.deepEqual(JSON.parse(requestedOptions.body), {
-    action: "getBoardPostsForNotificationDispatch",
-    bridgeToken: "b".repeat(64)
-  });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].url, HUMETRO_LOGIN_URL);
+  assert.match(calls[0].options.body, /userID=employee/);
+  assert.equal(calls[1].url, HUMETRO_BOARD_URL);
+  assert.equal(calls[1].options.headers.Cookie, "JSESSIONID=session123");
   assert.equal(posts[0].id, 6042);
 });
 
-test("reports invalid GAS JSON without sending a notification", async () => {
+test("latest provider returns the greatest post id", async () => {
+  const older = { ...sourcePayload.data, id: 6041, title: "이전 게시글", link: sourcePayload.data.link.replace("6042", "6041") };
+  let call = 0;
   const provider = createHumetroLatestPostProvider({
-    bridgeTokenProvider: async () => "b".repeat(64),
-    fetchImpl: async () => ({
-      ok: true,
-      async json() { throw new SyntaxError("bad json"); }
-    })
+    credentialsProvider: async () => ({ userId: "employee", password: "secret" }),
+    fetchImpl: async () => (++call === 1
+      ? response({ status: 302, cookies: ["JSESSIONID=session123; Path=/"] })
+      : response({ body: html([sourcePayload.data, older]) }))
   });
-  await assert.rejects(provider(), { message: "HUMETRO_LATEST_POST_INVALID_JSON" });
+  assert.equal((await provider()).id, 6042);
 });
 
-test("does not call public GAS when the private bridge token is unavailable", async () => {
+test("credentials are required before any external request", async () => {
   let called = false;
-  const provider = createHumetroLatestPostProvider({
-    bridgeTokenProvider: async () => "",
-    fetchImpl: async () => {
-      called = true;
-      throw new Error("unexpected");
-    }
+  const provider = createHumetroBoardPostsProvider({
+    credentialsProvider: async () => ({ userId: "", password: "" }),
+    fetchImpl: async () => { called = true; }
   });
-  await assert.rejects(provider(), { message: "HUMETRO_BRIDGE_TOKEN_UNAVAILABLE" });
+  await assert.rejects(provider(), { message: "HUMETRO_CREDENTIALS_UNAVAILABLE" });
   assert.equal(called, false);
 });

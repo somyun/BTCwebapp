@@ -39,6 +39,10 @@ service cloud.firestore {
       }
     }
 
+    match /notificationTokenOwners/{tokenHash} {
+      allow read, write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

@@ -365,7 +365,7 @@
         if (!identity) return;
 
         if (active) {
-            await withNetworkRetry(() => post(ENDPOINTS.register, {
+            const result = await withNetworkRetry(() => post(ENDPOINTS.register, {
                 deviceId: identity.deviceId,
                 deviceSecret: identity.deviceSecret,
                 token,
@@ -373,6 +373,12 @@
                 keywords,
                 active: true
             }));
+            if (result?.migratedLegacy) {
+                saveToStorage('userKeywords', String(result.keywords || ''));
+                saveToStorage('isNotificationActive', result.active === true);
+                document.getElementById('keywordInput').value = String(result.keywords || '');
+                lastSyncedKeywords = String(result.keywords || '');
+            }
         } else {
             await withNetworkRetry(() => post(ENDPOINTS.active, {
                 deviceId: identity.deviceId,
@@ -694,6 +700,9 @@
                 void getMessagingToken().catch(() => {});
             }
             void retryPendingSync();
+            if (active && 'Notification' in window && Notification.permission === 'granted') {
+                void registerActiveDevice(savedKeywords, { requireStillActive: true }).catch(() => {});
+            }
             await refresh();
         } catch (error) {
             const banner = document.getElementById('overallHealth');

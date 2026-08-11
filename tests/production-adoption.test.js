@@ -33,6 +33,29 @@ test('production notification dispatch is fail-closed behind an admin gate', () 
     assert.match(source, /exports\.setNotificationDispatchGate = manualAdmin/);
 });
 
+test('production collects Happy Hugether posts directly without the GAS bridge', () => {
+    const index = read('firebase-production', 'functions', 'index.js');
+    const client = read('firebase-production', 'functions', 'lib', 'humetro-client.js');
+    const combined = `${index}\n${client}`;
+    assert.match(combined, /HUMETRO_ID/);
+    assert.match(combined, /HUMETRO_PW/);
+    assert.match(client, /https:\/\/www\.humetro\.busan\.kr/);
+    assert.doesNotMatch(combined, /HUMETRO_BRIDGE_TOKEN|bridgeTokenProvider|script\.google\.com/);
+});
+
+test('legacy notification devices can be imported and silently claimed by the same browser token', () => {
+    const migration = read('firebase-production', 'functions', 'lib', 'legacy-notification-migration.js');
+    const service = read('firebase-production', 'functions', 'lib', 'notification-service.js');
+    const settings = read('notification-settings.js');
+    const app = read('script.js');
+    assert.match(migration, /FCM_Tokens/);
+    assert.match(migration, /legacy:\s*true/);
+    assert.match(service, /migratedLegacy/);
+    assert.match(service, /notificationTokenOwners/);
+    assert.match(settings, /migratedLegacy/);
+    assert.match(app, /bootstrapFirebaseNotificationMigration/);
+});
+
 test('test-only environment values do not leak into adopted production code', () => {
     const adoptedFiles = [
         'firebase-messaging-sw.js',

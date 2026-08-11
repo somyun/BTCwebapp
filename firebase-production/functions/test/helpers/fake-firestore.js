@@ -43,6 +43,10 @@ class FakeDocumentReference {
     this.firestore.documents.set(this.path, clone({ ...existing, ...data }));
   }
 
+  async delete() {
+    this.firestore.documents.delete(this.path);
+  }
+
   collection(name) {
     return new FakeCollectionReference(this.firestore, `${this.path}/${name}`);
   }
@@ -91,6 +95,10 @@ class FakeTransaction {
 
   update(reference, data) {
     return reference.update(data);
+  }
+
+  delete(reference) {
+    return reference.delete();
   }
 }
 

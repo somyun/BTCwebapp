@@ -110,6 +110,7 @@ function createNotificationService({
   }
 
   const devices = firestore.collection("notificationDevices");
+  const tokenOwners = firestore.collection("notificationTokenOwners");
   const notificationState = firestore.collection("systemConfig").doc("happyHugetherNotifications");
 
   async function authenticatedDevice(payload) {
@@ -125,11 +126,42 @@ function createNotificationService({
   async function registerDevice(payload) {
     const input = normalizeRegistration(payload);
     const reference = devices.doc(input.deviceId);
+    const ownerReference = tokenOwners.doc(input.tokenHash);
     let rotated = false;
+    let migratedLegacy = false;
 
     await firestore.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(reference);
+      const ownerSnapshot = await transaction.get(ownerReference);
+      const existing = snapshot.exists ? snapshot.data() : null;
+      if (existing && !verifyHash(input.deviceSecret, existing.secretHash)) {
+        throw new Error("UNAUTHORIZED_DEVICE");
+      }
+      const previousDeviceId = ownerSnapshot.exists ? String(ownerSnapshot.get("deviceId") || "") : "";
+      const previousReference = previousDeviceId && previousDeviceId !== input.deviceId
+        ? devices.doc(previousDeviceId)
+        : null;
+      const previousSnapshot = previousReference ? await transaction.get(previousReference) : null;
+      const oldOwnerReference = existing?.tokenHash && existing.tokenHash !== input.tokenHash
+        ? tokenOwners.doc(existing.tokenHash)
+        : null;
+      const oldOwnerSnapshot = oldOwnerReference ? await transaction.get(oldOwnerReference) : null;
       const timestamp = serverTimestamp();
+      const previous = previousSnapshot?.exists ? previousSnapshot.data() : null;
+      const inheritedKeywords = previous ? String(previous.keywords || "") : input.keywords;
+      const inheritedActive = previous ? previous.active === true : input.active;
+
+      if (previousReference && previous) {
+        migratedLegacy = previous.legacy === true;
+        transaction.update(previousReference, {
+          active: false,
+          token: null,
+          claimedBy: input.deviceId,
+          claimedAt: timestamp,
+          updatedAt: timestamp
+        });
+      }
+
       if (!snapshot.exists) {
         transaction.create(reference, {
           schemaVersion: 1,
@@ -137,9 +169,11 @@ function createNotificationService({
           secretHash: hash(input.deviceSecret),
           token: input.token,
           tokenHash: input.tokenHash,
-          keywords: input.keywords,
+          keywords: inheritedKeywords,
           userAgent: input.userAgent,
-          active: input.active,
+          active: inheritedActive,
+          legacy: false,
+          migratedFromLegacy: migratedLegacy,
           registeredAt: timestamp,
           updatedAt: timestamp,
           tokenUpdatedAt: timestamp,
@@ -147,29 +181,37 @@ function createNotificationService({
           lastFailureCode: null,
           lastFailureAt: null
         });
-        return;
+      } else {
+        rotated = existing.tokenHash !== input.tokenHash;
+        transaction.update(reference, {
+          token: input.token,
+          tokenHash: input.tokenHash,
+          previousTokenHash: rotated ? existing.tokenHash || null : existing.previousTokenHash || null,
+          keywords: migratedLegacy ? inheritedKeywords : input.keywords,
+          userAgent: input.userAgent,
+          active: migratedLegacy ? inheritedActive : input.active,
+          legacy: false,
+          migratedFromLegacy: existing.migratedFromLegacy === true || migratedLegacy,
+          updatedAt: timestamp,
+          tokenUpdatedAt: rotated ? timestamp : existing.tokenUpdatedAt || timestamp,
+          tokenRotationCount: Number(existing.tokenRotationCount || 0) + (rotated ? 1 : 0),
+          lastFailureCode: null,
+          lastFailureAt: null
+        });
       }
-
-      const existing = snapshot.data();
-      if (!verifyHash(input.deviceSecret, existing.secretHash)) throw new Error("UNAUTHORIZED_DEVICE");
-      rotated = existing.tokenHash !== input.tokenHash;
-      transaction.update(reference, {
-        token: input.token,
+      transaction.set(ownerReference, {
         tokenHash: input.tokenHash,
-        previousTokenHash: rotated ? existing.tokenHash || null : existing.previousTokenHash || null,
-        keywords: input.keywords,
-        userAgent: input.userAgent,
-        active: input.active,
-        updatedAt: timestamp,
-        tokenUpdatedAt: rotated ? timestamp : existing.tokenUpdatedAt || timestamp,
-        tokenRotationCount: Number(existing.tokenRotationCount || 0) + (rotated ? 1 : 0),
-        lastFailureCode: null,
-        lastFailureAt: null
+        deviceId: input.deviceId,
+        legacy: false,
+        updatedAt: timestamp
       });
+      if (oldOwnerReference && oldOwnerSnapshot?.exists && oldOwnerSnapshot.get("deviceId") === input.deviceId) {
+        transaction.delete(oldOwnerReference);
+      }
     });
 
     const saved = await reference.get();
-    return { ...publicStatus(saved.data()), rotated };
+    return { ...publicStatus(saved.data()), rotated, migratedLegacy };
   }
 
   async function setDeviceActive(payload) {
@@ -324,6 +366,42 @@ function createNotificationService({
     return { ...results, eventId, postId: post.id, postTitle: post.title };
   }
 
+  async function previewLatestBoardPostTargets() {
+    const boardPosts = await boardPostsProvider();
+    if (!Array.isArray(boardPosts) || boardPosts.length === 0) throw new Error("HUMETRO_INVALID_BOARD_POSTS");
+    const latestPost = [...boardPosts].sort((left, right) => left.id - right.id).at(-1);
+    const snapshot = await devices.get();
+    const result = { scanned: snapshot.docs.length, active: 0, matched: 0, inactive: 0, keywordSkipped: 0 };
+    for (const deviceSnapshot of snapshot.docs) {
+      const device = deviceSnapshot.data();
+      if (device.active !== true || !device.token) {
+        result.inactive += 1;
+      } else {
+        result.active += 1;
+        if (matchesKeywords(latestPost.title, device.keywords)) result.matched += 1;
+        else result.keywordSkipped += 1;
+      }
+    }
+    return { ...result, postId: latestPost.id, postTitle: latestPost.title, postLink: latestPost.link };
+  }
+
+  async function initializeBoardPostBaseline() {
+    const boardPosts = await boardPostsProvider();
+    if (!Array.isArray(boardPosts) || boardPosts.length === 0) throw new Error("HUMETRO_INVALID_BOARD_POSTS");
+    const latestPost = [...boardPosts].sort((left, right) => left.id - right.id).at(-1);
+    const timestamp = serverTimestamp();
+    await notificationState.set({
+      lastPostId: latestPost.id,
+      latestPostId: latestPost.id,
+      latestPostTitle: latestPost.title,
+      latestPostLink: latestPost.link,
+      initializedAt: timestamp,
+      lastCheckedAt: timestamp,
+      updatedAt: timestamp
+    }, { merge: true });
+    return { initialized: true, postId: latestPost.id, postTitle: latestPost.title, postLink: latestPost.link };
+  }
+
   async function sendLatestBoardPostIfNew() {
     const boardPosts = await boardPostsProvider();
     if (!Array.isArray(boardPosts) || boardPosts.length === 0) throw new Error("HUMETRO_INVALID_BOARD_POSTS");
@@ -391,7 +469,7 @@ function createNotificationService({
     const results = { scanned: snapshot.docs.length, accepted: 0, inactive: 0, failed: 0 };
     for (const deviceSnapshot of snapshot.docs) {
       const device = deviceSnapshot.data();
-      if (device.active !== true || !device.token) {
+      if (device.active !== true || !device.token || device.legacy === true) {
         results.inactive += 1;
         continue;
       }
@@ -416,6 +494,8 @@ function createNotificationService({
   return {
     acknowledge,
     getStatus,
+    initializeBoardPostBaseline,
+    previewLatestBoardPostTargets,
     registerDevice,
     sendLatestBoardPostIfNew,
     sendHeartbeatAll,

@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { createNotificationService, matchesKeywords } = require("../lib/notification-service");
+const { createNotificationService, hash, matchesKeywords } = require("../lib/notification-service");
 const { FakeFirestore } = require("./helpers/fake-firestore");
 
 const deviceId = `d_${"a".repeat(43)}`;
@@ -73,6 +73,35 @@ test("rotates the token in the same device document instead of appending a devic
   assert.equal(firestore.documents.get(`notificationDevices/${deviceId}`).token, nextToken);
   const devicePaths = [...firestore.documents.keys()].filter((path) => /^notificationDevices\/[^/]+$/.test(path));
   assert.deepEqual(devicePaths, [`notificationDevices/${deviceId}`]);
+});
+
+test("silently claims one legacy token and preserves its keywords without duplicate ownership", async () => {
+  const legacyId = `d_${"b".repeat(43)}`;
+  const tokenHash = hash(registration.token);
+  const firestore = new FakeFirestore({
+    [`notificationDevices/${legacyId}`]: {
+      deviceId: legacyId,
+      secretHash: null,
+      token: registration.token,
+      tokenHash,
+      keywords: "legacy keyword",
+      active: true,
+      legacy: true
+    },
+    [`notificationTokenOwners/${tokenHash}`]: {
+      tokenHash,
+      deviceId: legacyId,
+      legacy: true
+    }
+  });
+  const { service } = createService({ firestore });
+  const result = await service.registerDevice({ ...registration, keywords: "" });
+  assert.equal(result.migratedLegacy, true);
+  assert.equal(result.keywords, "legacy keyword");
+  assert.equal(firestore.documents.get(`notificationDevices/${legacyId}`).active, false);
+  assert.equal(firestore.documents.get(`notificationDevices/${legacyId}`).token, null);
+  assert.equal(firestore.documents.get(`notificationDevices/${deviceId}`).token, registration.token);
+  assert.equal(firestore.documents.get(`notificationTokenOwners/${tokenHash}`).deviceId, deviceId);
 });
 
 test("rejects a caller that does not hold the device secret", async () => {
@@ -231,6 +260,23 @@ test("daily heartbeat targets active devices only", async () => {
   const result = await service.sendHeartbeatAll();
   assert.deepEqual(result, { scanned: 2, accepted: 1, inactive: 1, failed: 0 });
   assert.equal(messaging.sent[0].data.type, "heartbeat");
+});
+
+test("daily heartbeat skips unclaimed legacy delivery records", async () => {
+  const legacyId = `d_${"c".repeat(43)}`;
+  const firestore = new FakeFirestore({
+    [`notificationDevices/${legacyId}`]: {
+      deviceId: legacyId,
+      token: registration.token,
+      tokenHash: hash(registration.token),
+      active: true,
+      legacy: true
+    }
+  });
+  const { service, messaging } = createService({ firestore });
+  const result = await service.sendHeartbeatAll();
+  assert.deepEqual(result, { scanned: 1, accepted: 0, inactive: 1, failed: 0 });
+  assert.equal(messaging.sent.length, 0);
 });
 
 test("receipt updates both the event phase and device health timestamp", async () => {

@@ -219,6 +219,7 @@ window.onload = function () {
         navigator.serviceWorker.register('./firebase-messaging-sw.js', { scope: './' })
             .then((registration) => {
                 console.log('Service Worker registered with scope:', registration.scope);
+                void bootstrapFirebaseNotificationMigration(registration);
             }).catch((err) => {
                 console.log('Service Worker registration failed:', err);
             });
@@ -226,6 +227,40 @@ window.onload = function () {
 
     initializeNotificationHeaderState();
 };
+
+async function bootstrapFirebaseNotificationMigration(registration) {
+    if (!messaging || !window.BWANotificationStore ||
+        getFromStorage('isNotificationActive') !== true ||
+        typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    try {
+        const [identity, token] = await Promise.all([
+            window.BWANotificationStore.getOrCreateIdentity(),
+            messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: registration })
+        ]);
+        if (!token) return;
+        const response = await fetch('https://asia-northeast3-btcwebapp-551bd.cloudfunctions.net/registerNotificationDevice', {
+            method: 'POST',
+            cache: 'no-store',
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                deviceId: identity.deviceId,
+                deviceSecret: identity.deviceSecret,
+                token,
+                userAgent: navigator.userAgent,
+                keywords: String(getFromStorage('userKeywords', '') || ''),
+                active: true
+            })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.ok !== true) return;
+        if (payload.result?.migratedLegacy) {
+            saveToStorage('userKeywords', String(payload.result.keywords || ''));
+            saveToStorage('isNotificationActive', payload.result.active === true);
+        }
+    } catch (_) {
+        // Existing legacy delivery remains active and migration retries on the next visit.
+    }
+}
 
 function initializeNotificationHeaderState() {
     const historyButton = document.getElementById('notificationHistoryBtn');

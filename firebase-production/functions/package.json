@@ -8,7 +8,7 @@
     "node": "22"
   },
   "scripts": {
-    "lint": "node --check index.js && node --check lib/publisher.js && node --check lib/submission.js && node --check lib/notification-service.js && node --check lib/humetro-client.js && node --check lib/sheets-sync.js && node --check lib/synchronizer.js",
+    "lint": "node --check index.js && node --check lib/publisher.js && node --check lib/submission.js && node --check lib/notification-service.js && node --check lib/humetro-client.js && node --check lib/legacy-notification-migration.js && node --check lib/sheets-sync.js && node --check lib/synchronizer.js",
     "test": "node --test",
     "verify": "npm run lint && npm test"
   },
