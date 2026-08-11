@@ -78,10 +78,10 @@ test('legacy notification UI is absent and removed again after browser history r
 
 test('notification documents and assets are prefetched for faster navigation', () => {
     const index = read('index.html');
-    assert.match(index, /rel="prefetch" href="\.\/notifications\.html\?v=production-notifications-2" as="document"/);
-    assert.match(index, /rel="prefetch" href="\.\/notification-settings\.html\?v=production-notifications-2" as="document"/);
-    assert.match(index, /href="\.\/notifications\.html\?v=production-notifications-2"/);
-    assert.match(index, /href="\.\/notification-settings\.html\?v=production-notifications-2"/);
+    assert.match(index, /rel="prefetch" href="\.\/notifications\.html\?v=production-notifications-3" as="document"/);
+    assert.match(index, /rel="prefetch" href="\.\/notification-settings\.html\?v=production-notifications-3" as="document"/);
+    assert.match(index, /href="\.\/notifications\.html\?v=production-notifications-3"/);
+    assert.match(index, /href="\.\/notification-settings\.html\?v=production-notifications-3"/);
 });
 
 test('dynamic form header controls use CSP-safe event listeners', () => {
