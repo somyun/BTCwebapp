@@ -189,10 +189,17 @@ function createSubmissionService({ firestore, serverTimestamp, now = () => new D
 
   async function submit(payload) {
     const submission = normalizeSubmissionRequest(payload);
+    const submissionRef = firestore.collection("measurementSubmissions").doc(submission.idempotencyKey);
+    const existingSnapshot = await submissionRef.get();
+    if (existingSnapshot.exists) {
+      const existingData = existingSnapshot.data();
+      if (existingData.requestHash !== submission.requestHash) throw new Error("IDEMPOTENCY_KEY_CONFLICT");
+      return { created: false, status: publicSubmissionStatus(existingSnapshot.id, existingData) };
+    }
+
     const published = await loadPublishedForm(firestore, submission.formKey);
     validateAgainstPublishedForm(submission, published.document, published.rows);
 
-    const submissionRef = firestore.collection("measurementSubmissions").doc(submission.idempotencyKey);
     const gateRef = firestore.collection("systemConfig").doc("submissions");
     const acceptedDate = now();
     const rateRef = firestore.collection("submissionRateLimits").doc(`minute_${minuteBucket(acceptedDate)}`);

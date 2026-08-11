@@ -121,6 +121,38 @@ test("same idempotency key returns the original receipt and conflicting content 
   await assert.rejects(service.submit(conflicting), { message: "IDEMPOTENCY_KEY_CONFLICT" });
 });
 
+test("same idempotency key returns the synced receipt after the published revision advances", async () => {
+  const firestore = seedFirestore();
+  const service = createSubmissionService({
+    firestore,
+    serverTimestamp: () => "SERVER_TIMESTAMP",
+    now: () => new Date("2026-07-29T01:02:03.000Z")
+  });
+  await service.submit(request);
+  firestore.documents.set(`publicForms/${formKey}`, {
+    schemaVersion: 1,
+    formKey,
+    sheetName,
+    sourceRevision: "2026-07-29T01:02:03.000Z",
+    rowCount: 1,
+    storageMode: "inline",
+    rows
+  });
+  firestore.documents.set("systemConfig/submissions", { enabled: false });
+  const submissionPath = `measurementSubmissions/${request.idempotencyKey}`;
+  firestore.documents.set(submissionPath, {
+    ...firestore.documents.get(submissionPath),
+    status: "synced",
+    sourceRevisionAfterSync: "2026-07-29T01:02:03.000Z",
+    updatedCellCount: 2
+  });
+
+  const duplicate = await service.submit(structuredClone(request));
+  assert.equal(duplicate.created, false);
+  assert.equal(duplicate.status.status, "synced");
+  assert.equal(duplicate.status.updatedCellCount, 2);
+});
+
 test("public status never exposes measurements or request hashes", () => {
   const status = publicSubmissionStatus(request.idempotencyKey, {
     status: "queued",
