@@ -8,6 +8,11 @@
     <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; connect-src https://script.google.com https://script.googleusercontent.com https://*.googleusercontent.com https://firestore.googleapis.com https://asia-northeast3-btcwebapp-551bd.cloudfunctions.net https://firebaseinstallations.googleapis.com https://fcmregistrations.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://dapi.kakao.com https://*.daumcdn.net http://*.daumcdn.net; img-src 'self' data: https://*.daumcdn.net http://*.daumcdn.net https://*.kakaocdn.net; style-src 'self' 'unsafe-inline'; script-src 'self' https://www.gstatic.com https://cdnjs.cloudflare.com https://dapi.kakao.com https://*.daumcdn.net http://*.daumcdn.net; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'">
     <link rel="stylesheet" href="style.css?v=production-adoption-2">
+    <link rel="prefetch" href="./notifications.html?v=production-notifications-2" as="document">
+    <link rel="prefetch" href="./notification-settings.html?v=production-notifications-2" as="document">
+    <link rel="prefetch" href="./notifications.css?v=production-notifications-1" as="style">
+    <link rel="prefetch" href="./notifications.js?v=production-notifications-1" as="script">
+    <link rel="prefetch" href="./notification-settings.js?v=production-notifications-2" as="script">
     <meta name="theme-color" content="#ffffff">
     <link rel="manifest" href="./manifest.json">
     <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
@@ -29,7 +34,7 @@
                 </svg>
             </button>
             <h1 class="header-title">ERP 점검 웹앱</h1>
-            <a id="notificationHistoryBtn" class="icon-btn notification-history-btn" href="./notifications.html?v=production-notifications-1"
+            <a id="notificationHistoryBtn" class="icon-btn notification-history-btn" href="./notifications.html?v=production-notifications-2"
                 title="알림 내역" aria-label="알림 내역">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22Zm7-6v-5a7 7 0 0 0-5-6.71V3a2 2 0 1 0-4 0v1.29A7 7 0 0 0 5 11v5l-2 2v1h18v-1l-2-2Z" />
@@ -61,7 +66,7 @@
 
                 <div class="sidenav-section reset-section">
                     <button id="resetFavoritesBtn" class="reset-button">⭐ 즐겨찾기 초기화</button>
-                    <a class="notification-settings-link" href="./notification-settings.html?v=production-notifications-1">🔔 알림 설정</a>
+                    <a class="notification-settings-link" href="./notification-settings.html?v=production-notifications-2">🔔 알림 설정</a>
                 </div>
             </div>
         </nav>
@@ -202,7 +207,7 @@
     <script src="notification-store.js?v=production-notifications-1"></script>
     <script src="auth.js?v=map-auth-config-1"></script>
     <script src="map.js?v=hopo-cad-18"></script>
-    <script src="script.js?v=production-adoption-3"></script>
+    <script src="script.js?v=production-adoption-4"></script>
 </body>
 
 </html>

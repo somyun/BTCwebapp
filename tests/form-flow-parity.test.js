@@ -23,13 +23,16 @@ test('production form reads fail closed and both clients render retry actions', 
     assert.match(testbed, /폼 생성 실패:[\s\S]*?processFileUpload\(fileData, userChoice\)/);
 });
 
-test('production save uses Functions, waits for Sheet sync, and only then prepares XLSX', () => {
+test('production prepares XLSX on form load and refreshes it only after Sheet sync on save', () => {
     assert.match(production, /cloudfunctions\.net\/submitMeasurements/);
     assert.match(production, /cloudfunctions\.net\/getMeasurementSubmission/);
     assert.match(production, /await pollSubmission\(payload\.idempotencyKey\)/);
     const syncIndex = production.indexOf('Google Sheet 동기화 완료');
-    const xlsxIndex = production.indexOf('await prepareXlsxAfterSync();', syncIndex);
+    const xlsxIndex = production.indexOf('await prepareXlsxForCurrentRevision({ reportStatus: true });', syncIndex);
     assert.ok(syncIndex >= 0 && xlsxIndex > syncIndex, 'XLSX must be prepared after Sheet sync');
+    assert.match(production, /initSortable\(\);\s*void prepareXlsxForCurrentRevision\(\);/);
+    assert.match(production, /currentSheetInfo\?\.lastModifiedDate \|\| currentSheetInfo\?\.sourceRevision/);
+    assert.match(production, /preparationId !== xlsxPreparationId/);
     assert.doesNotMatch(production, /callApi\(['"]saveMeasurementsToSheet['"]/);
 });
 

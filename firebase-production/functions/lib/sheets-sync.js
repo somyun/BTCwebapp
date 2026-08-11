@@ -3,6 +3,9 @@
 const { PRODUCTION_SPREADSHEET_ID } = require("./publisher");
 
 const SHEETS_API_BASE = "https://sheets.googleapis.com/v4/spreadsheets";
+const FORM_LIST_SHEET_ID = 0;
+const SEOUL_UTC_OFFSET_MINUTES = 9 * 60;
+const SHEETS_UNIX_EPOCH_OFFSET_DAYS = 25569;
 
 function quoteSheetName(sheetName) {
   return `'${String(sheetName).replaceAll("'", "''")}'`;
@@ -28,6 +31,39 @@ function formatMeasurementValue(value, decimalPlacesRaw) {
     return numeric.toFixed(decimalPlaces);
   }
   return text;
+}
+
+function revisionToSheetsSerial(revision) {
+  const timestamp = Date.parse(revision);
+  if (!Number.isFinite(timestamp)) throw new Error("INVALID_SOURCE_REVISION");
+  return (timestamp + SEOUL_UTC_OFFSET_MINUTES * 60 * 1000) / (24 * 60 * 60 * 1000) +
+    SHEETS_UNIX_EPOCH_OFFSET_DAYS;
+}
+
+function buildFormListDateFormatRequest(formListIndex) {
+  const rowIndex = formListIndex + 1;
+  return {
+    requests: [{
+      repeatCell: {
+        range: {
+          sheetId: FORM_LIST_SHEET_ID,
+          startRowIndex: rowIndex,
+          endRowIndex: rowIndex + 1,
+          startColumnIndex: 2,
+          endColumnIndex: 3
+        },
+        cell: {
+          userEnteredFormat: {
+            numberFormat: {
+              type: "DATE_TIME",
+              pattern: "yyyy-mm-dd h:mm:ss"
+            }
+          }
+        },
+        fields: "userEnteredFormat.numberFormat"
+      }
+    }]
+  };
 }
 
 function buildSheetsBatchUpdate({ sheetName, measurements, sheetRows, formListRows, revision }) {
@@ -72,7 +108,7 @@ function buildSheetsBatchUpdate({ sheetName, measurements, sheetRows, formListRo
   data.push({
     range: `'FormList'!C${formListIndex + 2}`,
     majorDimension: "ROWS",
-    values: [[revision]]
+    values: [[revisionToSheetsSerial(revision)]]
   });
 
   return {
@@ -121,6 +157,13 @@ function createSheetsGateway({ authClient, spreadsheetId = PRODUCTION_SPREADSHEE
     if (Number(response.data.totalUpdatedCells) !== expectedCells) {
       throw new Error(`SHEETS_UPDATED_CELL_COUNT_MISMATCH:${response.data.totalUpdatedCells || 0}:${expectedCells}`);
     }
+    const formListIndex = formListRows.findIndex((row) =>
+      String(row[0] ?? "").normalize("NFC") === sheetName && row[1] === PRODUCTION_SPREADSHEET_ID);
+    await authClient.request({
+      method: "POST",
+      url: `${SHEETS_API_BASE}/${spreadsheetId}:batchUpdate`,
+      data: buildFormListDateFormatRequest(formListIndex)
+    });
     return {
       updatedCellCount: response.data.totalUpdatedCells,
       updatedRangeCount: requestBody.data.length
@@ -132,10 +175,12 @@ function createSheetsGateway({ authClient, spreadsheetId = PRODUCTION_SPREADSHEE
 
 module.exports = {
   SHEETS_API_BASE,
+  buildFormListDateFormatRequest,
   buildSheetsBatchUpdate,
   comparisonText,
   createSheetsGateway,
   formatMeasurementValue,
   measurementKey,
-  quoteSheetName
+  quoteSheetName,
+  revisionToSheetsSerial
 };
