@@ -57,7 +57,8 @@ test('legacy notification devices can be imported and silently claimed by the sa
 });
 
 test('production cache versions force the notification migration code and worker to refresh', () => {
-    assert.match(read('index.html'), /script\.js\?v=production-adoption-4/);
+    assert.match(read('index.html'), /production-read\.js\?v=daily-measurement-cache-1/);
+    assert.match(read('index.html'), /script\.js\?v=daily-measurement-cache-1/);
     assert.match(read('notification-settings.html'), /notification-settings\.js\?v=production-notifications-2/);
     assert.match(read('script.js'), /firebase-messaging-sw\.js\?v=production-notifications-2/);
 });
@@ -129,4 +130,10 @@ test('CSP-safe controls use script listeners instead of inline handlers', () => 
     assert.doesNotMatch(index, /onchange=|onclick=/);
     assert.match(script, /getElementById\('uploadBtn'\)\?\.addEventListener\('click', handleUpload\)/);
     assert.match(script, /getElementById\('formSelect'\)\?\.addEventListener\('change', loadSelectedForm\)/);
+});
+
+test('today measurement caches are publicly readable but client writes remain blocked', () => {
+    const rules = read('firebase-production', 'firestore.rules');
+    assert.match(rules, /match \/dailyMeasurementCaches\/\{cacheId\}/);
+    assert.match(rules, /match \/dailyMeasurementCaches[\s\S]*allow read: if true;[\s\S]*allow write: if false;/);
 });

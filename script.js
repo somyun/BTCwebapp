@@ -853,6 +853,8 @@ function createDynamicForm(formData, formTitle) {
     // [3] 폼 필드 생성 Loop
     let prevLocPrefix = null;
 
+    const prefillTodayValues = currentSheetInfo?.hasTodayMeasurementCache === true;
+
     formData.forEach((data, index) => {
         const formGroup = document.createElement('div');
         formGroup.className = 'form-group';
@@ -895,7 +897,7 @@ function createDynamicForm(formData, formTitle) {
         input.inputMode = 'decimal';
         input.step = 'any';
         input.placeholder = placeholderText;
-        input.value = '';
+        input.value = prefillTodayValues ? String(data.value ?? '') : '';
         input.dataset.location = data.location;
         input.dataset.item = data.item;
         input.dataset.unit = data.unit;
@@ -1027,14 +1029,14 @@ async function prepareXlsxInAdvance(fileId, sheetName, fileName, fileDateStr, pr
     }
 }
 
-function xlsxFilename() {
-    const revision = currentSheetInfo?.lastModifiedDate || currentSheetInfo?.sourceRevision;
+function xlsxFilename(sheetInfo = currentSheetInfo) {
+    const revision = sheetInfo?.lastModifiedDate || sheetInfo?.sourceRevision;
     const parsedRevision = new Date(revision);
     const filenameDate = Number.isNaN(parsedRevision.getTime()) ? new Date() : parsedRevision;
     const date = `${String(filenameDate.getFullYear()).slice(-2)}${String(filenameDate.getMonth() + 1).padStart(2, '0')}${String(filenameDate.getDate()).padStart(2, '0')}`;
     return {
         date,
-        filename: `${currentSheetInfo.displayName || currentSheetInfo.sheetName}_${date}.xlsx`
+        filename: `${sheetInfo.displayName || sheetInfo.sheetName}_${date}.xlsx`
     };
 }
 
@@ -1042,13 +1044,13 @@ async function prepareXlsxForCurrentRevision({ reportStatus = false } = {}) {
     if (!currentSheetInfo) return false;
     const preparationId = ++xlsxPreparationId;
     const sheetInfo = { ...currentSheetInfo };
+    const { date, filename } = xlsxFilename(sheetInfo);
     const button = document.getElementById('xlsxDownloadBtn');
     if (button) {
         button.disabled = true;
-        button.textContent = 'XLSX 준비 중…';
+        button.textContent = `${date}.xlsx 준비중..`;
         delete button.dataset.prepareRetry;
     }
-    const { date, filename } = xlsxFilename();
     const prepared = await prepareXlsxInAdvance(
         sheetInfo.spreadsheetId,
         sheetInfo.sheetName,
@@ -1058,11 +1060,11 @@ async function prepareXlsxForCurrentRevision({ reportStatus = false } = {}) {
     );
     if (preparationId !== xlsxPreparationId) return false;
     if (prepared) {
-        if (reportStatus) updateSubmissionStatus('Google Sheet 동기화 및 XLSX 준비 완료', 'synced');
+        if (reportStatus) updateSubmissionStatus('저장 및 XLSX 준비 완료', 'synced');
         return true;
     }
     if (button) button.dataset.prepareRetry = 'true';
-    if (reportStatus) updateSubmissionStatus('Google Sheet 동기화 완료 · XLSX 준비 실패', 'xlsx-error');
+    if (reportStatus) updateSubmissionStatus('저장 완료 · XLSX 준비 실패', 'xlsx-error');
     return false;
 }
 
@@ -1161,25 +1163,50 @@ async function getSubmissionStatus(idempotencyKey) {
     return fetchFunctionJson(GET_SUBMISSION_URL, { idempotencyKey });
 }
 
-async function pollSubmission(idempotencyKey) {
+async function pollSubmissionUntilCached(idempotencyKey) {
     const deadline = Date.now() + SUBMISSION_POLL_TIMEOUT_MS;
     let lastStatus = null;
     while (Date.now() < deadline) {
         const status = await getSubmissionStatus(idempotencyKey);
-        lastStatus = status;
-        if (status.status === 'synced') return status;
-        if (status.status === 'failed' && !status.retryable) {
+        if (status.cachedAt || status.status === 'synced') return status;
+        if (status.status === 'failed') {
             throw new Error(status.errorCode || 'SUBMISSION_SYNC_FAILED');
         }
-        updateSubmissionStatus(
-            status.status === 'failed'
-                ? `일시 오류 후 자동 재시도 대기 · ${status.errorCode || '원인 확인 중'}`
-                : `접수 ${idempotencyKey.slice(0, 8)}… · ${status.status} · 시트 반영 확인 중`,
-            status.status
-        );
+        let message;
+        if (status.status === 'failed') {
+            message = `일시 오류 후 자동 재시도 대기 · ${status.errorCode || '원인 확인 중'}`;
+        } else if (status.status === 'caching') {
+            message = `Firebase에 측정값을 저장하는 중입니다.`;
+        } else {
+            message = `저장 접수 완료 · 처리 대기 중입니다.`;
+        }
+        updateSubmissionStatus(message, status.status);
+        lastStatus = status;
         await sleep(SUBMISSION_POLL_INTERVAL_MS);
     }
     throw new Error(`SUBMISSION_STATUS_TIMEOUT:${lastStatus?.status || 'unknown'}`);
+}
+
+async function monitorSheetSync(idempotencyKey, initialStatus, savedForm) {
+    let status = initialStatus;
+    const deadline = Date.now() + SUBMISSION_POLL_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+        if (status.status === 'synced') {
+            await loadFormList();
+            if (currentSheetInfo?.formKey === savedForm.formKey &&
+                currentSheetInfo?.sourceRevision === savedForm.sourceRevision) {
+                await prepareXlsxForCurrentRevision({ reportStatus: true });
+            }
+            return;
+        }
+        if (status.status === 'failed') {
+            showStatus('Firebase에는 저장했지만 Google Sheets 반영에 실패했습니다.', 'error', 5000);
+            return;
+        }
+        await sleep(SUBMISSION_POLL_INTERVAL_MS);
+        status = await getSubmissionStatus(idempotencyKey);
+    }
+    showStatus('Firebase 저장은 완료됐지만 Google Sheets 반영 확인이 지연되고 있습니다.', 'error', 5000);
 }
 
 async function submitOrRecover(payload) {
@@ -1210,24 +1237,27 @@ async function saveMeasurements() {
         payload = submissionPayload();
         setSaveButtonBusy(true, '저장 중...');
         updateSubmissionStatus('Firestore에 측정값을 접수하는 중입니다.', 'submitting');
-        showStatus('측정값을 저장 중입니다...', 'loading');
+        showStatus('저장 중...', 'loading');
         const receipt = await submitOrRecover(payload);
+        showStatus('측정값을 반영하고 있습니다...', 'loading');
         const initialStatus = receipt.status;
-        const synced = initialStatus.status === 'synced'
+        const cached = initialStatus.cachedAt || initialStatus.status === 'synced'
             ? initialStatus
-            : await pollSubmission(payload.idempotencyKey);
+            : await pollSubmissionUntilCached(payload.idempotencyKey);
         isMeasurementDirty = false;
-        currentSheetInfo.sourceRevision = synced.sourceRevisionAfterSync || currentSheetInfo.sourceRevision;
-        currentSheetInfo.lastModifiedDate = currentSheetInfo.sourceRevision;
+        currentSheetInfo.hasTodayMeasurementCache = true;
         pendingSubmission = null;
         updateSubmissionStatus(
-            `Google Sheet 동기화 완료 · ${synced.updatedCellCount}개 셀 · XLSX 준비 중`,
-            'synced'
+            'Firebase 저장 완료 · Google Sheets 후속 반영 중',
+            'cached'
         );
-        setSaveButtonBusy(true, '저장 완료');
+        setSaveButtonBusy(false, '측정값 저장');
+        showStatus('성공적으로 저장하였습니다!', 'success', 3000);
         await loadFormList();
-        await prepareXlsxForCurrentRevision({ reportStatus: true });
-        showStatus('측정값이 Google Sheet에 저장되었습니다.', 'success', 3000);
+        void monitorSheetSync(payload.idempotencyKey, cached, {
+            formKey: currentSheetInfo.formKey,
+            sourceRevision: currentSheetInfo.sourceRevision
+        });
     } catch (error) {
         updateSubmissionStatus(`저장 실패 · GAS 재전송 없음 · ${error.message}`, 'failed');
         setSaveButtonBusy(false, '다시 저장');
@@ -1321,7 +1351,7 @@ async function loadSelectedForm() {
     closeMenu();
 
     try {
-        const { rows: formData } = await window.BWAProductionRead.loadForm(
+        const { rows: formData, dailyCache } = await window.BWAProductionRead.loadForm(
             sheetName,
             {
                 formKey: selectedOption.dataset.formKey || null,
@@ -1340,6 +1370,7 @@ async function loadSelectedForm() {
             sheetName: sheetName,
             displayName: selectedOption.dataset.displayName,
             lastModifiedDate: selectedOption.dataset.lastModifiedDate,
+            hasTodayMeasurementCache: Boolean(dailyCache),
             sourceRevision: selectedOption.dataset.lastModifiedDate,
             rowCount: formData.length
         };

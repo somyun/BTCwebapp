@@ -89,7 +89,7 @@ test("large forms are split into bounded chunks without losing rows", () => {
   }
 });
 
-test("submission publishing advances the form and list to one deterministic revision", async () => {
+test("submission publishing writes only the date-specific measurement cache", async () => {
   const initialList = normalizeFormList(sourceList);
   const initialForm = buildFormDocument(initialList.items[0], [{
     uniqueId: "u1",
@@ -110,23 +110,24 @@ test("submission publishing advances the form and list to one deterministic revi
     logger: { info() {} }
   });
   const nextRevision = "2026-07-29T01:02:03.000Z";
-  const result = await publisher.publishSubmissionSnapshot({
+  const result = await publisher.publishDailyMeasurementCache({
     formDocument: initialPlan.root,
     rows: initialForm.rows,
     measurements: [{ uniqueId: "u1", location: "L", item: "I", value: "2", unit: "V" }],
     sourceRevision: nextRevision
   });
-  const storedForm = firestore.documents.get(`publicForms/${initialForm.formKey}`);
-  const storedList = firestore.documents.get("publicCache/formList");
-  assert.equal(result.form.status, "published");
-  assert.equal(result.list.status, "published");
-  assert.equal(storedForm.sourceRevision, nextRevision);
-  assert.equal(storedForm.rows[0].value, "2");
-  assert.equal(storedList.items[0].lastModifiedDate, nextRevision);
-  assert.equal(storedList.sourceRevision, nextRevision);
+  assert.equal(result.status, "published");
+  assert.equal(result.cacheDate, "2026-07-29");
+  const storedCache = firestore.documents.get(`dailyMeasurementCaches/${result.cacheId}`);
+  assert.equal(storedCache.sourceRevision, nextRevision);
+  assert.equal(storedCache.measurements[0].value, "2");
+  assert.equal(firestore.documents.get(`publicForms/${initialForm.formKey}`).sourceRevision,
+    initialForm.sourceRevision);
+  assert.equal(firestore.documents.get("publicCache/formList").sourceRevision,
+    initialList.sourceRevision);
 });
 
-test("submission snapshot maps sorted measurements by identity, not display order", async () => {
+test("daily measurement cache maps sorted measurements by identity, not display order", async () => {
   const initialList = normalizeFormList(sourceList);
   const initialForm = buildFormDocument(initialList.items[0], [
     { uniqueId: "u1", location: "L1", item: "I1", value: "1", unit: "V" },
@@ -143,7 +144,7 @@ test("submission snapshot maps sorted measurements by identity, not display orde
     serverTimestamp: () => "SERVER_TIMESTAMP",
     logger: { info() {} }
   });
-  await publisher.publishSubmissionSnapshot({
+  const result = await publisher.publishDailyMeasurementCache({
     formDocument: initialPlan.root,
     rows: initialForm.rows,
     measurements: [
@@ -152,8 +153,27 @@ test("submission snapshot maps sorted measurements by identity, not display orde
     ],
     sourceRevision: "2026-07-29T02:00:00.000Z"
   });
-  const storedRows = firestore.documents.get(`publicForms/${initialForm.formKey}`).rows;
+  const storedRows = firestore.documents.get(`dailyMeasurementCaches/${result.cacheId}`).measurements;
   assert.deepEqual(storedRows.map((row) => row.value), ["10", "20"]);
+});
+
+test("daily cleanup deletes past measurement caches and keeps today's cache", async () => {
+  const firestore = new FakeFirestore({
+    "dailyMeasurementCaches/yesterday": { cacheDate: "2026-07-28" },
+    "dailyMeasurementCaches/today": { cacheDate: "2026-07-29" }
+  });
+  const publisher = createPublisher({
+    firestore,
+    fetchImpl: async () => { throw new Error("GAS_MUST_NOT_BE_CALLED"); },
+    serverTimestamp: () => "SERVER_TIMESTAMP",
+    logger: { info() {} }
+  });
+  const result = await publisher.deleteExpiredDailyMeasurementCaches({
+    currentDate: "2026-07-29"
+  });
+  assert.equal(result.deletedCount, 1);
+  assert.equal(firestore.documents.has("dailyMeasurementCaches/yesterday"), false);
+  assert.equal(firestore.documents.has("dailyMeasurementCaches/today"), true);
 });
 
 test("scheduled publishing cannot regress a newer submission revision", async () => {

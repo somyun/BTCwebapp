@@ -227,6 +227,23 @@ async function mapWithConcurrency(values, limit, mapper) {
   return results;
 }
 
+function seoulDateKey(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function dailyMeasurementCacheId(formKey, value) {
+  return `${requireNonEmptyString(formKey, "formKey")}_${seoulDateKey(value)}`;
+}
+
 function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimestamp, logger = console }) {
   if (!firestore || typeof firestore.collection !== "function") throw new Error("FIRESTORE_REQUIRED");
   if (typeof fetchImpl !== "function") throw new Error("FETCH_REQUIRED");
@@ -336,10 +353,10 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
     return persistForm(buildFormDocument(formListItem, payload), force);
   }
 
-  async function publishSubmissionSnapshot({ formDocument, rows, measurements, sourceRevision }) {
+  async function publishDailyMeasurementCache({ formDocument, rows, measurements, sourceRevision }) {
     if (!formDocument || !Array.isArray(rows) || !Array.isArray(measurements) ||
         rows.length !== measurements.length || rows.length !== formDocument.rowCount) {
-      throw new Error("INVALID_SUBMISSION_SNAPSHOT");
+      throw new Error("INVALID_DAILY_MEASUREMENT_CACHE");
     }
     const normalizedRevision = normalizeRevision(sourceRevision);
     const valuesByIdentity = new Map(measurements.map((measurement) => [
@@ -356,43 +373,49 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
       if (!measurement || row.uniqueId !== measurement.uniqueId ||
           row.location !== measurement.location || row.item !== measurement.item ||
           row.unit !== measurement.unit) {
-        throw new Error("SUBMISSION_SNAPSHOT_IDENTITY_MISMATCH");
+        throw new Error("DAILY_MEASUREMENT_CACHE_IDENTITY_MISMATCH");
       }
-      return { ...row, value: normalizeOptionalString(measurement.value) ?? "" };
+      return {
+        uniqueId: row.uniqueId,
+        location: row.location,
+        item: row.item,
+        value: normalizeOptionalString(measurement.value) ?? "",
+        unit: row.unit
+      };
     });
-    const formResult = await persistForm(buildFormDocument({
+    const cacheDate = seoulDateKey(normalizedRevision);
+    const cacheId = dailyMeasurementCacheId(formDocument.formKey, normalizedRevision);
+    const reference = firestore.collection("dailyMeasurementCaches").doc(cacheId);
+    const existing = await reference.get();
+    if (existing.exists && isOlderRevision(normalizedRevision, existing.get("sourceRevision"))) {
+      return {
+        status: "stale_skipped",
+        cacheId,
+        cacheDate,
+        sourceRevision: existing.get("sourceRevision")
+      };
+    }
+    const base = {
+      schemaVersion: SCHEMA_VERSION,
       formKey: formDocument.formKey,
       sheetName: formDocument.sheetName,
-      lastModifiedDate: normalizedRevision
-    }, updatedRows), true);
-
-    const listRef = firestore.collection("publicCache").doc("formList");
-    const listSnapshot = await listRef.get();
-    if (!listSnapshot.exists) throw new Error("PUBLISHED_FORM_LIST_NOT_FOUND");
-    const currentList = listSnapshot.data();
-    if (!Array.isArray(currentList.items) || currentList.items.length !== currentList.itemCount) {
-      throw new Error("INVALID_PUBLISHED_FORM_LIST");
-    }
-    let matched = 0;
-    const items = currentList.items.map((item) => {
-      if (item.formKey !== formDocument.formKey) return item;
-      if (item.sheetName !== formDocument.sheetName) {
-        throw new Error("PUBLISHED_FORM_LIST_IDENTITY_MISMATCH");
-      }
-      matched += 1;
-      return { ...item, lastModifiedDate: normalizedRevision };
-    });
-    if (matched !== 1) throw new Error("PUBLISHED_FORM_LIST_ENTRY_NOT_FOUND");
-    const listRevision = items.map((item) => normalizeRevision(item.lastModifiedDate)).sort().at(-1);
-    const listDocument = {
-      schemaVersion: SCHEMA_VERSION,
-      sourceRevision: listRevision,
-      contentHash: hashCanonical({ schemaVersion: SCHEMA_VERSION, sourceRevision: listRevision, items }),
-      itemCount: items.length,
-      items
+      cacheDate,
+      sourceRevision: normalizedRevision,
+      measurementCount: updatedRows.length,
+      measurements: updatedRows
     };
-    const listResult = await persistFormList(listDocument, true);
-    return { form: formResult, list: listResult };
+    await reference.set({
+      ...base,
+      contentHash: hashCanonical(base),
+      cachedAt: serverTimestamp()
+    });
+    return {
+      status: "published",
+      cacheId,
+      cacheDate,
+      sourceRevision: normalizedRevision,
+      measurementCount: updatedRows.length
+    };
   }
 
   async function deleteOrphanedForms(validFormKeys) {
@@ -403,6 +426,16 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
       await orphan.ref.delete();
     }
     return orphans.length;
+  }
+
+  async function deleteExpiredDailyMeasurementCaches({ currentDate = seoulDateKey(new Date()) } = {}) {
+    const snapshot = await firestore.collection("dailyMeasurementCaches").get();
+    const expired = snapshot.docs.filter((document) => {
+      const cacheDate = String(document.get("cacheDate") || "");
+      return /^\d{4}-\d{2}-\d{2}$/.test(cacheDate) && cacheDate < currentDate;
+    });
+    await Promise.all(expired.map((document) => document.ref.delete()));
+    return { currentDate, deletedCount: expired.length };
   }
 
   async function publishAllChangedForms({ force = false } = {}) {
@@ -429,7 +462,13 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
     return result;
   }
 
-  return { publishFormList, publishForm, publishAllChangedForms, publishSubmissionSnapshot };
+  return {
+    publishFormList,
+    publishForm,
+    publishAllChangedForms,
+    publishDailyMeasurementCache,
+    deleteExpiredDailyMeasurementCaches
+  };
 }
 
 module.exports = {
@@ -443,6 +482,7 @@ module.exports = {
   buildFormDocument,
   buildStoragePlan,
   createPublisher,
+  dailyMeasurementCacheId,
   formKeyForSheet,
   hashCanonical,
   isOlderRevision,

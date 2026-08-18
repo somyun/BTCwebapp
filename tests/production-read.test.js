@@ -63,6 +63,53 @@ function firestoreFormListResponse() {
     };
 }
 
+function firestoreFormResponse(value = '1') {
+    const revision = '2026-07-29T00:00:00.000Z';
+    return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+            fields: {
+                schemaVersion: { integerValue: '1' },
+                formKey: { stringValue: `f_${'a'.repeat(32)}` },
+                sheetName: { stringValue: 'FORM_A' },
+                sourceRevision: { stringValue: revision },
+                rowCount: { integerValue: '1' },
+                storageMode: { stringValue: 'inline' },
+                rows: { arrayValue: { values: [{ mapValue: { fields: {
+                    uniqueId: { stringValue: 'u1' },
+                    location: { stringValue: 'L' },
+                    item: { stringValue: 'I' },
+                    value: { stringValue: value },
+                    unit: { stringValue: 'V' }
+                } } }] } }
+            }
+        })
+    };
+}
+
+function dailyCacheResponse(cacheDate, value = '2') {
+    return {
+        ok: true,
+        status: 200,
+        json: async () => ({ fields: {
+            schemaVersion: { integerValue: '1' },
+            formKey: { stringValue: `f_${'a'.repeat(32)}` },
+            sheetName: { stringValue: 'FORM_A' },
+            cacheDate: { stringValue: cacheDate },
+            sourceRevision: { stringValue: new Date().toISOString() },
+            measurementCount: { integerValue: '1' },
+            measurements: { arrayValue: { values: [{ mapValue: { fields: {
+                uniqueId: { stringValue: 'u1' },
+                location: { stringValue: 'L' },
+                item: { stringValue: 'I' },
+                value: { stringValue: value },
+                unit: { stringValue: 'V' }
+            } } }] } }
+        } })
+    };
+}
+
 test('production default serves the form list from Firestore when available', async () => {
     let gasFetchCount = 0;
     const window = loadRuntime('', async () => firestoreFormListResponse());
@@ -77,6 +124,25 @@ test('production default serves the form list from Firestore when available', as
     assert.equal(result.items[0].displayName, 'FORM_A');
     assert.equal(gasFetchCount, 0);
     assert.equal(window.BWA_PRODUCTION_READ_STATE.source, 'firestore');
+});
+
+test('form loading overlays only today\'s date-specific measurement cache', async () => {
+    const dateParts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(new Date());
+    const values = Object.fromEntries(dateParts.map((part) => [part.type, part.value]));
+    const cacheDate = `${values.year}-${values.month}-${values.day}`;
+    const window = loadRuntime('', async (url) => {
+        const pathname = new URL(url).pathname;
+        if (pathname.endsWith('/publicCache/formList')) return firestoreFormListResponse();
+        if (pathname.includes('/dailyMeasurementCaches/')) return dailyCacheResponse(cacheDate);
+        return firestoreFormResponse();
+    });
+    const list = await window.BWAProductionRead.loadFormList();
+    const result = await window.BWAProductionRead.loadForm('FORM_A', list.items[0]);
+    assert.equal(result.dailyCache.cacheDate, cacheDate);
+    assert.equal(result.rows[0].value, '2');
+    assert.equal(result.document.rows[0].value, '1');
 });
 
 test('production default shows a Firestore error without calling GAS when unavailable', async () => {

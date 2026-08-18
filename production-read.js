@@ -19,6 +19,17 @@
     };
     let formsBySheetName = new Map();
 
+    function seoulDateKey(value = new Date()) {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Seoul',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        }).formatToParts(value);
+        const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+        return `${values.year}-${values.month}-${values.day}`;
+    }
+
     function firestoreUrl(pathSegments, parameters = {}) {
         const path = pathSegments.map((segment) => encodeURIComponent(String(segment))).join('/');
         const url = new URL(`${firestoreBase}/${path}`);
@@ -65,6 +76,15 @@
         return adapter.decodeFirestoreFields(payload.fields || {});
     }
 
+    async function fetchOptionalDocument(pathSegments) {
+        try {
+            return await fetchDocument(pathSegments);
+        } catch (error) {
+            if (error.message === 'HTTP_404') return null;
+            throw error;
+        }
+    }
+
     async function fetchFormListDocument() {
         const document = await fetchDocument(['publicCache', 'formList']);
         const normalized = adapter.normalizeFirestoreFormList(document);
@@ -108,6 +128,40 @@
         return { document, rows: normalizedRows };
     }
 
+    function rowIdentity(row) {
+        return row.uniqueId
+            ? `id:${row.uniqueId}`
+            : `pair:${row.location.toLocaleLowerCase('ko-KR')}|${row.item.toLocaleLowerCase('ko-KR')}`;
+    }
+
+    async function fetchTodayMeasurements(formListItem, rows) {
+        const cacheDate = seoulDateKey();
+        const cacheId = `${formListItem.formKey}_${cacheDate}`;
+        const document = await fetchOptionalDocument(['dailyMeasurementCaches', cacheId]);
+        if (!document) return { dailyCache: null, rows };
+        if (document.schemaVersion !== adapter.SCHEMA_VERSION ||
+            document.formKey !== formListItem.formKey ||
+            document.sheetName !== formListItem.sheetName ||
+            document.cacheDate !== cacheDate ||
+            !Array.isArray(document.measurements) ||
+            document.measurementCount !== document.measurements.length) {
+            throw new Error('INVALID_DAILY_MEASUREMENT_CACHE');
+        }
+        const measurements = adapter.normalizeRows(document.measurements);
+        if (measurements.length !== rows.length) throw new Error('DAILY_CACHE_ROW_COUNT_MISMATCH');
+        const values = new Map(measurements.map((measurement) => [rowIdentity(measurement), measurement]));
+        const mergedRows = rows.map((row) => {
+            const measurement = values.get(rowIdentity(row));
+            if (!measurement || measurement.uniqueId !== row.uniqueId ||
+                measurement.location !== row.location || measurement.item !== row.item ||
+                measurement.unit !== row.unit) {
+                throw new Error('DAILY_CACHE_ROW_IDENTITY_MISMATCH');
+            }
+            return { ...row, value: measurement.value };
+        });
+        return { dailyCache: document, rows: mergedRows };
+    }
+
     async function loadFormList() {
         const { items } = await fetchFormListDocument();
         return { items, servedBy: 'firestore' };
@@ -116,7 +170,13 @@
     async function loadForm(sheetName, selectedForm) {
         const formListItem = formsBySheetName.get(sheetName) || selectedForm;
         const result = await fetchFormDocument(formListItem);
-        return { rows: result.rows, servedBy: 'firestore', document: result.document };
+        const today = await fetchTodayMeasurements(formListItem, result.rows);
+        return {
+            rows: today.rows,
+            servedBy: 'firestore',
+            document: result.document,
+            dailyCache: today.dailyCache
+        };
     }
 
     root.BWA_PRODUCTION_READ_STATE = state;

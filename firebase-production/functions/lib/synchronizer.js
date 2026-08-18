@@ -24,7 +24,7 @@ function createSynchronizer({
   if (!firestore || typeof firestore.runTransaction !== "function") throw new Error("FIRESTORE_REQUIRED");
   if (typeof serverTimestamp !== "function") throw new Error("SERVER_TIMESTAMP_REQUIRED");
   if (!sheetsGateway || typeof sheetsGateway.syncMeasurements !== "function") throw new Error("SHEETS_GATEWAY_REQUIRED");
-  if (!publisher || typeof publisher.publishSubmissionSnapshot !== "function") {
+  if (!publisher || typeof publisher.publishDailyMeasurementCache !== "function") {
     throw new Error("PUBLISHER_REQUIRED");
   }
 
@@ -37,13 +37,13 @@ function createSynchronizer({
         return { skip: true, status: publicSubmissionStatus(snapshot.id, data) };
       }
       const leaseExpiresAt = Date.parse(data.leaseExpiresAt || "");
-      if (data.status === "syncing" && data.syncOwner !== owner &&
+      if (["syncing", "caching", "cached"].includes(data.status) && data.syncOwner !== owner &&
           Number.isFinite(leaseExpiresAt) && leaseExpiresAt > now().getTime()) {
         throw new Error("SUBMISSION_SYNC_IN_PROGRESS");
       }
       const startedAt = now();
       transaction.update(submissionRef, {
-        status: "syncing",
+        status: data.cachedAt ? "cached" : "caching",
         syncOwner: owner,
         leaseExpiresAt: new Date(startedAt.getTime() + LEASE_MS).toISOString(),
         attemptCount: Number(data.attemptCount || 0) + 1,
@@ -65,31 +65,38 @@ function createSynchronizer({
       const submission = acquired.data;
       const published = await loadPublishedForm(firestore, submission.formKey);
       const currentRevision = new Date(published.document.sourceRevision).toISOString();
-      const validationRevision = currentRevision === submission.acceptedAt
-        ? submission.acceptedAt
-        : submission.formRevision;
       validateAgainstPublishedForm(
-        { ...submission, formRevision: validationRevision },
+        { ...submission, formRevision: currentRevision },
         published.document,
         published.rows
       );
+      let cacheResult = null;
+      if (!submission.cachedAt) {
+        cacheResult = await publisher.publishDailyMeasurementCache({
+          formDocument: published.document,
+          rows: published.rows,
+          measurements: submission.measurements,
+          sourceRevision: submission.acceptedAt
+        });
+        await submissionRef.update({
+          status: "cached",
+          sourceRevisionAfterCache: submission.acceptedAt,
+          dailyCacheId: cacheResult.cacheId,
+          dailyCacheDate: cacheResult.cacheDate,
+          cacheStatus: cacheResult.status,
+          cachedAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      }
       const sheetResult = await sheetsGateway.syncMeasurements({
         sheetName: submission.sheetName,
         measurements: submission.measurements,
         revision: submission.acceptedAt
       });
-      const cacheResult = await publisher.publishSubmissionSnapshot({
-        formDocument: published.document,
-        rows: published.rows,
-        measurements: submission.measurements,
-        sourceRevision: submission.acceptedAt
-      });
       await submissionRef.update({
         status: "synced",
         sourceRevisionAfterSync: submission.acceptedAt,
         updatedCellCount: sheetResult.updatedCellCount,
-        cacheFormStatus: cacheResult.form.status,
-        cacheListStatus: cacheResult.list.status,
         retryable: false,
         errorCode: null,
         syncOwner: null,

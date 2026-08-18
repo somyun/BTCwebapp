@@ -49,9 +49,9 @@ test("a repeated worker event performs the Sheets side effect once after synced"
       }
     },
     publisher: {
-      publishSubmissionSnapshot: async () => {
+      publishDailyMeasurementCache: async () => {
         publishCalls += 1;
-        return { form: { status: "published" }, list: { status: "published" } };
+        return { status: "published", cacheId: "daily", cacheDate: "2026-07-29" };
       }
     },
     now: () => new Date("2026-07-29T01:02:04.000Z"),
@@ -66,9 +66,59 @@ test("a repeated worker event performs the Sheets side effect once after synced"
   assert.equal(publishCalls, 1);
 });
 
+test("publishes the Firebase cache before starting the Sheets update", async () => {
+  const firestore = makeFirestore();
+  const stages = [];
+  const synchronizer = createSynchronizer({
+    firestore,
+    serverTimestamp: () => "2026-07-29T01:02:04.000Z",
+    sheetsGateway: {
+      syncMeasurements: async () => {
+        stages.push(firestore.documents.get(`measurementSubmissions/${submissionId}`).status);
+        return { updatedCellCount: 2 };
+      }
+    },
+    publisher: {
+      publishDailyMeasurementCache: async () => {
+        stages.push("publisher");
+        return { status: "published", cacheId: "daily", cacheDate: "2026-07-29" };
+      }
+    },
+    now: () => new Date("2026-07-29T01:02:04.000Z"),
+    logger: { info() {}, error() {} }
+  });
+
+  const result = await synchronizer.syncSubmission(submissionId, "event-cache-stage");
+  assert.deepEqual(stages, ["publisher", "cached"]);
+  assert.equal(result.status, "synced");
+  assert.equal(result.sourceRevisionAfterCache, "2026-07-29T01:02:03.000Z");
+});
+
+test("keeps a successful Firebase cache when the later Sheets update fails", async () => {
+  const firestore = makeFirestore();
+  const synchronizer = createSynchronizer({
+    firestore,
+    serverTimestamp: () => "2026-07-29T01:02:04.000Z",
+    sheetsGateway: { syncMeasurements: async () => { throw new Error("SHEETS_HTTP_400"); } },
+    publisher: {
+      publishDailyMeasurementCache: async () => ({
+        status: "published", cacheId: "daily", cacheDate: "2026-07-29"
+      })
+    },
+    now: () => new Date("2026-07-29T01:02:04.000Z"),
+    logger: { info() {}, error() {} }
+  });
+
+  const result = await synchronizer.syncSubmission(submissionId, "event-sheet-failure");
+  assert.equal(result.status, "failed");
+  assert.equal(result.cachedAt, "2026-07-29T01:02:04.000Z");
+  assert.equal(result.sourceRevisionAfterCache, "2026-07-29T01:02:03.000Z");
+});
+
 test("a retryable Sheets failure is tracked and can be retried safely", async () => {
   const firestore = makeFirestore();
   let shouldFail = true;
+  let publishCalls = 0;
   const synchronizer = createSynchronizer({
     firestore,
     serverTimestamp: () => "2026-07-29T01:02:04.000Z",
@@ -79,10 +129,12 @@ test("a retryable Sheets failure is tracked and can be retried safely", async ()
       }
     },
     publisher: {
-      publishSubmissionSnapshot: async () => ({
-        form: { status: "published" },
-        list: { status: "published" }
-      })
+      publishDailyMeasurementCache: async () => {
+        publishCalls += 1;
+        return {
+          status: "published", cacheId: "daily", cacheDate: "2026-07-29"
+        };
+      }
     },
     now: () => new Date("2026-07-29T01:02:04.000Z"),
     logger: { info() {}, error() {} }
@@ -95,12 +147,12 @@ test("a retryable Sheets failure is tracked and can be retried safely", async ()
   const synced = await synchronizer.syncSubmission(submissionId, "manual-retry");
   assert.equal(synced.status, "synced");
   assert.equal(synced.attemptCount, 2);
+  assert.equal(publishCalls, 1);
 });
 
-test("retry continues when a previous attempt already published the deterministic target revision", async () => {
+test("queued save continues after an earlier save advances the published form revision", async () => {
   const firestore = makeFirestore();
-  const acceptedAt = "2026-07-29T01:02:03.000Z";
-  firestore.documents.get(`publicForms/${formKey}`).sourceRevision = acceptedAt;
+  firestore.documents.get(`publicForms/${formKey}`).sourceRevision = "2026-07-29T01:00:00.000Z";
   const stored = firestore.documents.get(`measurementSubmissions/${submissionId}`);
   stored.status = "failed";
   stored.retryable = true;
@@ -109,9 +161,8 @@ test("retry continues when a previous attempt already published the deterministi
     serverTimestamp: () => "2026-07-29T01:02:04.000Z",
     sheetsGateway: { syncMeasurements: async () => ({ updatedCellCount: 2 }) },
     publisher: {
-      publishSubmissionSnapshot: async () => ({
-        form: { status: "published" },
-        list: { status: "published" }
+      publishDailyMeasurementCache: async () => ({
+        status: "published", cacheId: "daily", cacheDate: "2026-07-29"
       })
     },
     now: () => new Date("2026-07-29T01:02:04.000Z"),

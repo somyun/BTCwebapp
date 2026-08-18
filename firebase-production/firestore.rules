@@ -17,6 +17,12 @@ service cloud.firestore {
       }
     }
 
+    // The web app reads only the document keyed for today's Seoul date.
+    match /dailyMeasurementCaches/{cacheId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // T5 submissions are accepted and queried only through validated HTTPS Functions.
     match /measurementSubmissions/{submissionId} {
       allow read, write: if false;

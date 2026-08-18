@@ -244,6 +244,16 @@ exports.publishAllChangedFormsScheduled = onSchedule({
   await getPublisher().publishAllChangedForms();
 });
 
+exports.deleteExpiredDailyMeasurementCachesScheduled = onSchedule({
+  schedule: "5 0 * * *",
+  timeZone: "Asia/Seoul",
+  retryCount: 1,
+  labels: { "bwa-release": "daily-measurement-cache" }
+}, async () => {
+  const result = await getPublisher().deleteExpiredDailyMeasurementCaches();
+  logger.info("Expired daily measurement caches deleted", result);
+});
+
 exports.submitMeasurements = publicEndpoint((body) => getSubmissionService().submit(body));
 
 exports.getMeasurementSubmission = publicEndpoint((body) =>

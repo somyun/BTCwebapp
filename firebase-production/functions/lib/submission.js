@@ -168,12 +168,15 @@ function publicSubmissionStatus(id, data) {
     sheetName: data.sheetName,
     formKey: data.formKey,
     acceptedAt: data.acceptedAt || timestampToIso(data.createdAt),
+    cachedAt: timestampToIso(data.cachedAt),
     syncStartedAt: timestampToIso(data.syncStartedAt),
     syncedAt: timestampToIso(data.syncedAt),
     failedAt: timestampToIso(data.failedAt),
     attemptCount: Number(data.attemptCount || 0),
     retryable: Boolean(data.retryable),
     errorCode: data.errorCode || null,
+    dailyCacheDate: data.dailyCacheDate || null,
+    sourceRevisionAfterCache: data.sourceRevisionAfterCache || null,
     sourceRevisionAfterSync: data.sourceRevisionAfterSync || null,
     updatedCellCount: Number(data.updatedCellCount || 0)
   };
