@@ -39,12 +39,10 @@ test('display settings button toggles the layer panel accessibly', () => {
     assert.match(mapSource, /panel\.contains\(event\.target\) \|\| button\.contains\(event\.target\)/);
 });
 
-test('mobile pinch updates the CAD canvas transform during the gesture', () => {
+test('mobile pinch relies on the native NAVER overlay transform', () => {
     assert.match(mapSource, /addEventListener\('touchmove', updatePinch/);
-    assert.match(mapSource, /screenPointToStagePoint\(midpoint\)/);
-    assert.match(mapSource, /screenPointToCanvasPoint\(midpoint\)/);
-    assert.match(mapSource, /translate3d\(\$\{translateX\}px, \$\{translateY\}px, 0\) scale\(\$\{scale\}\)/);
-    assert.match(styles, /\.cad-map-overlay\.pinching\s*{[\s\S]*?transition: none;/);
+    assert.doesNotMatch(mapSource, /canvas\.style\.transform = .*scale/);
+    assert.doesNotMatch(styles, /\.cad-map-overlay\.pinching/);
 });
 
 test('NAVER native zoom reaches level 21 without an additional zoom control', () => {
@@ -82,6 +80,8 @@ test('device orientation automatically rotates the map without an app button', (
     assert.match(styles, /\.map-view\.landscape-mode \.map-zoom-controls\s*{[\s\S]*?right: 12px;/);
     assert.match(mapSource, /function scheduleResponsiveRelayout\(\)[\s\S]*?window\.requestAnimationFrame\([\s\S]*?window\.requestAnimationFrame/);
     assert.match(mapSource, /new window\.ResizeObserver\(scheduleResponsiveRelayout\)\.observe\(getElement\('mapView'\)\)/);
+    assert.match(mapSource, /const viewWidth = Number\(view\?\.clientWidth \|\| 0\)/);
+    assert.match(mapSource, /if \(viewWidth <= 0 \|\| viewHeight <= 0 \|\| !surface\) return false/);
 });
 
 test('CAD overlay keeps vector labels upright and stable at native zoom levels', () => {
@@ -91,7 +91,7 @@ test('CAD overlay keeps vector labels upright and stable at native zoom levels',
     assert.match(mapSource, /class: 'cad-map-label'/);
     assert.match(mapSource, /transform: `rotate\(\$\{-mapRotationDegrees\} \$\{x\} \$\{y\}\)`/);
     assert.match(mapSource, /label\.setAttribute\('transform', `rotate\(\$\{-mapRotationDegrees\}/);
-    assert.match(mapSource, /relayoutMap\(\);[\s\S]*?map\.setCenter\(center\);/);
+    assert.match(mapSource, /if \(!relayoutMap\(\)\) return;[\s\S]*?map\.setCenter\(center\);/);
     assert.doesNotMatch(mapSource, /LABEL_DETAIL_SCALE_COMPENSATION|detailScale/);
     assert.match(mapSource, /'vector-effect': 'non-scaling-stroke'/);
     assert.match(styles, /\.cad-map-label\s*{[\s\S]*?font-size: var\(--cad-label-font-size, 14px\)/);

@@ -897,11 +897,6 @@ header {
   box-shadow: 0 1px 5px rgba(15, 23, 42, 0.5), 0 0 0 3px rgba(22, 119, 255, 0.22);
 }
 
-.cad-map-overlay.pinching {
-  transition: none;
-  will-change: transform;
-}
-
 .map-loading {
   position: absolute;
   inset: 0;
@@ -1723,6 +1718,26 @@ header {
 }
 
 @media (orientation: landscape) and (max-height: 720px) {
+  .map-view.landscape-mode .map-type-controls.search-active.result-selected {
+    display: flex;
+    align-items: stretch;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .map-view.landscape-mode .map-type-controls.result-selected .map-search-panel {
+    flex: 0 1 38%;
+    width: auto;
+    min-width: 180px;
+  }
+
+  .map-view.landscape-mode .map-type-controls.result-selected .map-search-navigation {
+    position: static;
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+  }
+
   .map-view.landscape-mode .map-type-controls.search-active {
     right: 70px;
     left: 12px;

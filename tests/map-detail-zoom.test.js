@@ -72,7 +72,7 @@ async function createHarness() {
         setCenter(center) { this.center = center; mapEvents.center_changed?.(); }
         panTo(center) { this.setCenter(center); }
         setOptions(key, value) { if (key === 'draggable') this.draggable = value; }
-        setSize() { this.sizeCalls += 1; }
+        setSize(size) { this.sizeCalls += 1; this.lastSize = size; }
         getPanes() { return { overlayLayer: overlayPane }; }
         getProjection() {
             return {
@@ -166,16 +166,20 @@ test('an outside pointer closes the layer panel', async () => {
 
 test('device orientation rotates the map and keeps labels readable', async () => {
     const { elements, renderedLabel, window, windowListeners, getMap } = await createHarness();
+    elements.mapView.clientWidth = 1000; elements.mapView.clientHeight = 600;
     window.innerWidth = 1000; window.innerHeight = 600; window.screen.orientation.angle = 90;
     await windowListeners.resize();
     assert.match(elements.mapZoomStage.style.transform, /rotate\(-90deg\)/);
     assert.equal(renderedLabel.transform, 'rotate(90 125 240)');
     assert.equal(getMap().draggable, false);
     assert.ok(getMap().sizeCalls >= 2);
+    elements.mapView.clientWidth = 600; elements.mapView.clientHeight = 1000;
     window.innerWidth = 600; window.innerHeight = 1000;
     await windowListeners.resize();
     assert.equal(elements.mapZoomStage.style.transform, '');
     assert.equal(getMap().draggable, true);
+    assert.equal(getMap().lastSize.width, 600);
+    assert.equal(getMap().lastSize.height, 1000);
 });
 
 test('dragging while device-rotated follows the visible screen direction', async () => {
@@ -190,12 +194,25 @@ test('dragging while device-rotated follows the visible screen direction', async
     assert.equal(after.lng, before.lng);
 });
 
-test('pinching while device-rotated keeps the CAD preview aligned', async () => {
+test('pinching leaves CAD preview transforms to the native NAVER overlay pane', async () => {
     const { elements, window, windowListeners } = await createHarness();
     window.innerWidth = 1000; window.innerHeight = 600; window.screen.orientation.angle = 90;
     await windowListeners.resize();
+    const before = elements.cadOverlay.style.transform;
     elements.naverMap.listeners.touchstart({ touches: [{ clientX: 100, clientY: 100 }, { clientX: 200, clientY: 100 }] });
     elements.naverMap.listeners.touchmove({ touches: [{ clientX: 70, clientY: 100 }, { clientX: 270, clientY: 100 }] });
-    assert.equal(elements.cadOverlay.style.transform, 'translate3d(0px, 20px, 0) scale(2)');
+    assert.equal(elements.cadOverlay.style.transform, before);
     assert.doesNotMatch(elements.mapZoomStage.style.transform, /scale/);
+});
+
+test('hidden map does not collapse to 1px and restores its visible container size on reentry', async () => {
+    const { elements, getMap, window } = await createHarness();
+    const sizeCalls = getMap().sizeCalls;
+    elements.mapView.clientWidth = 0; elements.mapView.clientHeight = 0;
+    window.BWAMap.relayout();
+    assert.equal(getMap().sizeCalls, sizeCalls);
+    elements.mapView.clientWidth = 600; elements.mapView.clientHeight = 1000;
+    window.BWAMap.relayout();
+    assert.equal(getMap().lastSize.width, 600);
+    assert.equal(getMap().lastSize.height, 1000);
 });

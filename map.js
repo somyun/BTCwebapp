@@ -46,8 +46,6 @@
     let currentPositionAccuracy = null;
     let locationWatchId = null;
     let hasLocationFix = false;
-    let pinchGesture = null;
-    let pinchFinishTimer = 0;
     let mapRotationDegrees = 0;
     let transformedPanGesture = null;
     let mapInteractionState = '';
@@ -132,32 +130,6 @@
         return {
             x: Math.abs(x) < 1e-9 ? 0 : x,
             y: Math.abs(y) < 1e-9 ? 0 : y
-        };
-    }
-
-    function screenPointToStagePoint(point) {
-        const view = getElement('mapView');
-        const rect = view?.getBoundingClientRect?.();
-        if (!view || !rect) return { ...point };
-        const screenCenterX = rect.left + (rect.width / 2);
-        const screenCenterY = rect.top + (rect.height / 2);
-        const delta = screenVectorToStageVector(
-            point.x - screenCenterX,
-            point.y - screenCenterY
-        );
-        const stageWidth = mapRotationDegrees === 0 ? view.clientWidth : view.clientHeight;
-        const stageHeight = mapRotationDegrees === 0 ? view.clientHeight : view.clientWidth;
-        return {
-            x: (stageWidth / 2) + delta.x,
-            y: (stageHeight / 2) + delta.y
-        };
-    }
-
-    function screenPointToCanvasPoint(point) {
-        const stagePoint = screenPointToStagePoint(point);
-        return {
-            x: stagePoint.x - (Number.parseFloat(canvas?.style?.left) || 0),
-            y: stagePoint.y - (Number.parseFloat(canvas?.style?.top) || 0)
         };
     }
 
@@ -314,8 +286,7 @@
         activeSearchResults = [];
         selectedSearchResultIndex = -1;
         getElement('mapSearchList')?.replaceChildren();
-        const navigation = getElement('mapSearchNavigation');
-        if (navigation) navigation.hidden = true;
+        setSearchNavigationVisible(false);
     }
 
     function buildSearchIndex() {
@@ -368,14 +339,13 @@
     }
 
     function updateSearchNavigation() {
-        const navigation = getElement('mapSearchNavigation');
         const text = getElement('mapSearchNavigationText');
         const layer = getElement('mapSearchNavigationLayer');
         const status = getElement('mapSearchNavigationStatus');
         const previous = getElement('mapSearchPrevBtn');
         const next = getElement('mapSearchNextBtn');
         const hasSelection = selectedSearchResultIndex >= 0 && activeSearchResults.length > 0;
-        if (navigation) navigation.hidden = !hasSelection;
+        setSearchNavigationVisible(hasSelection);
         if (!hasSelection) return;
         const selectedResult = activeSearchResults[selectedSearchResultIndex];
         if (text) {
@@ -391,12 +361,18 @@
         if (next) next.disabled = selectedSearchResultIndex === activeSearchResults.length - 1;
     }
 
+    function setSearchNavigationVisible(visible) {
+        const navigation = getElement('mapSearchNavigation');
+        const controls = getElement('mapTopControls');
+        if (navigation) navigation.hidden = !visible;
+        controls?.classList.toggle('result-selected', visible);
+    }
+
     function reopenSearchResults() {
         if (!activeSearchResults.length) return;
         const results = getElement('mapSearchResults');
-        const navigation = getElement('mapSearchNavigation');
         if (results) results.hidden = false;
-        if (navigation) navigation.hidden = true;
+        setSearchNavigationVisible(false);
     }
 
     function selectSearchResult(result, resultIndex = activeSearchResults.indexOf(result)) {
@@ -497,8 +473,7 @@
     function scheduleTextSearch() {
         activeSearchResults = [];
         selectedSearchResultIndex = -1;
-        const navigation = getElement('mapSearchNavigation');
-        if (navigation) navigation.hidden = true;
+        setSearchNavigationVisible(false);
         window.clearTimeout(searchDebounceTimer);
         searchDebounceTimer = window.setTimeout(performTextSearch, 140);
     }
@@ -783,7 +758,6 @@
     }
 
     function queuePositionUpdate() {
-        if (canvas?.classList.contains('pinching')) return;
         if (positionFrame) return;
         positionFrame = window.requestAnimationFrame(() => {
             positionFrame = 0;
@@ -791,20 +765,12 @@
         });
     }
 
-    function touchDistance(first, second) {
-        return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
-    }
-
-    function touchMidpoint(first, second) {
-        return {
-            x: (first.clientX + second.clientX) / 2,
-            y: (first.clientY + second.clientY) / 2
-        };
-    }
-
     function beginPinch(event) {
-        if (!canvas) return;
-
+        if (event.touches.length > 1) {
+            transformedPanGesture = null;
+            getElement('mapZoomStage')?.classList.remove('dragging');
+            return;
+        }
         if (customTransformActive() && event.touches.length === 1) {
             const touch = event.touches[0];
             transformedPanGesture = {
@@ -812,27 +778,7 @@
                 y: touch.clientY
             };
             getElement('mapZoomStage')?.classList.add('dragging');
-            return;
         }
-
-        if (event.touches.length !== 2) return;
-        const first = event.touches[0];
-        const second = event.touches[1];
-        const midpoint = touchMidpoint(first, second);
-
-        window.clearTimeout(pinchFinishTimer);
-        transformedPanGesture = null;
-
-        const canvasMidpoint = screenPointToCanvasPoint(midpoint);
-        pinchGesture = {
-            distance: Math.max(1, touchDistance(first, second)),
-            midpoint,
-            stageMidpoint: screenPointToStagePoint(midpoint)
-        };
-        canvas.classList.add('pinching');
-        canvas.classList.remove('zooming');
-        canvas.style.transformOrigin = `${canvasMidpoint.x}px ${canvasMidpoint.y}px`;
-        canvas.style.transform = 'translate3d(0, 0, 0) scale(1)';
     }
 
     function updatePinch(event) {
@@ -844,29 +790,7 @@
             );
             transformedPanGesture.x = touch.clientX;
             transformedPanGesture.y = touch.clientY;
-            return;
         }
-
-        if (!pinchGesture || event.touches.length !== 2 || !canvas) return;
-        const first = event.touches[0];
-        const second = event.touches[1];
-        const midpoint = touchMidpoint(first, second);
-        const distanceRatio = touchDistance(first, second) / pinchGesture.distance;
-
-        const scale = Math.max(0.25, Math.min(4, distanceRatio));
-        const stageMidpoint = screenPointToStagePoint(midpoint);
-        const translateX = stageMidpoint.x - pinchGesture.stageMidpoint.x;
-        const translateY = stageMidpoint.y - pinchGesture.stageMidpoint.y;
-        canvas.style.transform = `translate3d(${translateX}px, ${translateY}px, 0) scale(${scale})`;
-    }
-
-    function clearPinchTransform() {
-        if (!canvas) return;
-        pinchGesture = null;
-        canvas.classList.remove('pinching');
-        canvas.style.transform = '';
-        canvas.style.transformOrigin = '';
-        updateOverlayPosition();
     }
 
     function endPinch(event) {
@@ -874,13 +798,6 @@
             transformedPanGesture = null;
             getElement('mapZoomStage')?.classList.remove('dragging');
         }
-        if (!pinchGesture || event.touches.length >= 2) return;
-
-        pinchGesture = null;
-        window.clearTimeout(pinchFinishTimer);
-        // Give NAVER Maps a moment to commit the new projection, then hand control
-        // back quickly so a remaining finger can continue panning without lag.
-        pinchFinishTimer = window.setTimeout(clearPinchTransform, 80);
     }
 
     function beginTransformedPointerPan(event) {
@@ -1110,7 +1027,6 @@
     }
 
     function onMapIdle() {
-        if (canvas?.classList.contains('pinching')) clearPinchTransform();
         queuePositionUpdate();
         window.clearTimeout(idleTimer);
         idleTimer = window.setTimeout(async () => {
@@ -1131,11 +1047,18 @@
     }
 
     function relayoutMap() {
-        if (!map) return;
+        if (!map) return false;
+        const view = getElement('mapView');
         const surface = getElement('naverMap');
-        const width = Math.max(1, surface?.clientWidth || 1);
-        const height = Math.max(1, surface?.clientHeight || 1);
+        const viewWidth = Number(view?.clientWidth || 0);
+        const viewHeight = Number(view?.clientHeight || 0);
+        if (viewWidth <= 0 || viewHeight <= 0 || !surface) return false;
+        const width = customTransformActive() ? viewHeight : viewWidth;
+        const height = customTransformActive() ? viewWidth : viewHeight;
+        surface.style.width = `${width}px`;
+        surface.style.height = `${height}px`;
         map.setSize(new window.naver.maps.Size(width, height));
+        return true;
     }
 
     function scheduleResponsiveRelayout() {
@@ -1149,7 +1072,7 @@
                 syncOrientationFromDevice();
                 applyMapTransform();
                 const center = map.getCenter();
-                relayoutMap();
+                if (!relayoutMap()) return;
                 map.setCenter(center);
                 renderRevision += 1;
                 rasterDirty = true;

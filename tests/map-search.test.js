@@ -70,6 +70,8 @@ test('search results are responsive and independently scrollable', () => {
     assert.match(styles, /\.map-search-results\s*{[\s\S]*?max-height:[\s\S]*?overflow: hidden;/);
     assert.match(styles, /\.map-search-list\s*{[\s\S]*?overflow-y: auto;[\s\S]*?scroll-padding-bottom: 12px;/);
     assert.match(styles, /\.map-view\.landscape-mode \.map-type-controls\.search-active[\s\S]*?right: 70px;/);
+    assert.match(styles, /\.map-view\.landscape-mode \.map-type-controls\.search-active\.result-selected\s*{[\s\S]*?display: flex;[\s\S]*?flex-wrap: nowrap;/);
+    assert.match(styles, /\.map-view\.landscape-mode \.map-type-controls\.result-selected \.map-search-navigation\s*{[\s\S]*?position: static;/);
 });
 
 test('CAD data resolves beside the deployed map script for test-site parity', () => {
