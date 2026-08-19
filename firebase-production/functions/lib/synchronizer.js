@@ -18,6 +18,7 @@ function createSynchronizer({
   serverTimestamp,
   sheetsGateway,
   publisher,
+  xlsxCache = null,
   now = () => new Date(),
   logger = console
 }) {
@@ -97,6 +98,7 @@ function createSynchronizer({
         status: "synced",
         sourceRevisionAfterSync: submission.acceptedAt,
         updatedCellCount: sheetResult.updatedCellCount,
+        ...(xlsxCache ? { xlsxStatus: "preparing", xlsxErrorCode: null } : {}),
         retryable: false,
         errorCode: null,
         syncOwner: null,
@@ -104,6 +106,32 @@ function createSynchronizer({
         syncedAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
+      if (xlsxCache) {
+        try {
+          const xlsxJob = await xlsxCache.enqueue({
+            formKey: submission.formKey,
+            sheetName: submission.sheetName,
+            revision: submission.acceptedAt
+          });
+          await submissionRef.update({
+            xlsxStatus: xlsxJob.status === "ready" ? "ready" : "preparing",
+            xlsxJobId: xlsxJob.jobId,
+            xlsxErrorCode: null,
+            updatedAt: serverTimestamp()
+          });
+        } catch (xlsxError) {
+          await submissionRef.update({
+            xlsxStatus: "queue_failed",
+            xlsxErrorCode: errorCode(xlsxError),
+            updatedAt: serverTimestamp()
+          });
+          logger.error("XLSX cache job registration failed after Sheets sync", {
+            submissionId,
+            formKey: submission.formKey,
+            errorCode: errorCode(xlsxError)
+          });
+        }
+      }
       const completed = await submissionRef.get();
       logger.info("Test measurement submission synced", {
         submissionId,

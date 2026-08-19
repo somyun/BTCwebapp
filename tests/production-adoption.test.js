@@ -58,7 +58,7 @@ test('legacy notification devices can be imported and silently claimed by the sa
 
 test('production cache versions force the notification migration code and worker to refresh', () => {
     assert.match(read('index.html'), /production-read\.js\?v=daily-measurement-cache-1/);
-    assert.match(read('index.html'), /script\.js\?v=daily-measurement-cache-1/);
+    assert.match(read('index.html'), /script\.js\?v=xlsx-cache-1/);
     assert.match(read('notification-settings.html'), /notification-settings\.js\?v=production-notifications-2/);
     assert.match(read('script.js'), /firebase-messaging-sw\.js\?v=production-notifications-2/);
 });

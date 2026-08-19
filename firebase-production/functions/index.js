@@ -4,6 +4,7 @@ const { timingSafeEqual } = require("node:crypto");
 const { getApps, initializeApp } = require("firebase-admin/app");
 const { FieldValue, getFirestore } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
+const { getStorage } = require("firebase-admin/storage");
 const { logger, setGlobalOptions } = require("firebase-functions/v2");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onRequest } = require("firebase-functions/v2/https");
@@ -23,6 +24,7 @@ const {
 const { createSheetsGateway } = require("./lib/sheets-sync");
 const { createSynchronizer } = require("./lib/synchronizer");
 const { createLegacyNotificationMigrator } = require("./lib/legacy-notification-migration");
+const { createXlsxCacheService } = require("./lib/xlsx-cache");
 
 const REGION = "asia-northeast3";
 const PUBLISHER_ADMIN_TOKEN = defineSecret("BWA_PUBLISHER_TOKEN");
@@ -30,6 +32,7 @@ const HUMETRO_ID = defineSecret("HUMETRO_ID");
 const HUMETRO_PW = defineSecret("HUMETRO_PW");
 const PUBLIC_CORS = ["https://somyun.github.io"];
 const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+const STORAGE_BUCKET = "btcwebapp-551bd.firebasestorage.app";
 
 setGlobalOptions({
   region: REGION,
@@ -119,11 +122,38 @@ async function getSynchronizer() {
         serverTimestamp: () => FieldValue.serverTimestamp(),
         sheetsGateway: createSheetsGateway({ authClient }),
         publisher: getPublisher(),
+        xlsxCache: getXlsxCacheService(),
         logger
       });
     })();
   }
   return synchronizerPromise;
+}
+
+let xlsxCacheService;
+function getXlsxCacheService() {
+  if (!xlsxCacheService) {
+    xlsxCacheService = createXlsxCacheService({
+      firestore: getFirestoreClient(),
+      bucket: getStorage(getAdminApp()).bucket(STORAGE_BUCKET),
+      serverTimestamp: () => FieldValue.serverTimestamp(),
+      logger
+    });
+  }
+  return xlsxCacheService;
+}
+
+async function enqueuePublishedXlsx(formKey, { force = false } = {}) {
+  const normalizedFormKey = String(formKey || "").trim();
+  if (!normalizedFormKey) throw new Error("INVALID_FORM_KEY");
+  const snapshot = await getFirestoreClient().collection("publicForms").doc(normalizedFormKey).get();
+  if (!snapshot.exists) throw new Error("FORM_NOT_FOUND");
+  return getXlsxCacheService().enqueue({
+    formKey: normalizedFormKey,
+    sheetName: snapshot.get("sheetName"),
+    revision: snapshot.get("sourceRevision"),
+    force
+  });
 }
 
 function hasValidAdminToken(request) {
@@ -259,6 +289,9 @@ exports.submitMeasurements = publicEndpoint((body) => getSubmissionService().sub
 exports.getMeasurementSubmission = publicEndpoint((body) =>
   getSubmissionService().getStatus(body.idempotencyKey));
 
+exports.getXlsxDownload = publicEndpoint((body) =>
+  getXlsxCacheService().getDownload(body), "xlsx-cache-v1");
+
 exports.registerNotificationDevice = publicEndpoint((body) =>
   getNotificationService().registerDevice(body), "t7-notification-health");
 
@@ -314,11 +347,38 @@ exports.syncMeasurementSubmission = onDocumentCreated({
   return synchronizer.syncSubmission(submissionId, event.id, { throwRetryable: true });
 });
 
+exports.prepareXlsxExportJob = onDocumentCreated({
+  document: "xlsxExportJobs/{jobId}",
+  retry: true,
+  maxInstances: 1,
+  concurrency: 1,
+  timeoutSeconds: 300,
+  memory: "512MiB",
+  labels: { "bwa-release": "xlsx-cache-v1" }
+}, async (event) => getXlsxCacheService().processJob(event.params.jobId));
+
 exports.retryMeasurementSubmission = manualAdmin(async (body) => {
   const synchronizer = await getSynchronizer();
   const submissionId = String(body.submissionId || "").trim();
   if (!submissionId) throw new Error("INVALID_SUBMISSION_ID");
   return synchronizer.syncSubmission(submissionId, `manual-${Date.now()}`);
+});
+
+exports.prepareXlsxExport = manualAdmin((body) =>
+  enqueuePublishedXlsx(body.formKey, { force: body.force === true }));
+
+exports.prepareAllXlsxExports = manualAdmin(async (body) => {
+  const snapshot = await getFirestoreClient().collection("publicForms").get();
+  const results = [];
+  for (const document of snapshot.docs) {
+    results.push(await getXlsxCacheService().enqueue({
+      formKey: document.id,
+      sheetName: document.get("sheetName"),
+      revision: document.get("sourceRevision"),
+      force: body.force === true
+    }));
+  }
+  return { queuedCount: results.filter((result) => result.created).length, results };
 });
 
 exports.setSubmissionGate = manualAdmin((body) =>

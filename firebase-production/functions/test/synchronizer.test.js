@@ -171,3 +171,31 @@ test("queued save continues after an earlier save advances the published form re
   const synced = await synchronizer.syncSubmission(submissionId, "retry-after-publish");
   assert.equal(synced.status, "synced");
 });
+
+test("queues XLSX preparation after Sheets sync without coupling XLSX failure to save status", async () => {
+  const firestore = makeFirestore();
+  const queued = [];
+  const synchronizer = createSynchronizer({
+    firestore,
+    serverTimestamp: () => "2026-07-29T01:02:04.000Z",
+    sheetsGateway: { syncMeasurements: async () => ({ updatedCellCount: 2 }) },
+    publisher: {
+      publishDailyMeasurementCache: async () => ({
+        status: "published", cacheId: "daily", cacheDate: "2026-07-29"
+      })
+    },
+    xlsxCache: {
+      enqueue: async (job) => {
+        queued.push(job);
+        throw new Error("XLSX_QUEUE_TEMPORARY_FAILURE");
+      }
+    },
+    now: () => new Date("2026-07-29T01:02:04.000Z"),
+    logger: { info() {}, error() {} }
+  });
+  const result = await synchronizer.syncSubmission(submissionId, "xlsx-queue-failure");
+  assert.equal(result.status, "synced");
+  assert.equal(result.xlsxStatus, "queue_failed");
+  assert.equal(queued.length, 1);
+  assert.equal(queued[0].revision, "2026-07-29T01:02:03.000Z");
+});

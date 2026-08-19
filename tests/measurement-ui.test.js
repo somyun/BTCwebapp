@@ -32,3 +32,13 @@ test('Firebase cache success unlocks saving before Sheets follow-up completes', 
     assert.match(source, /void monitorSheetSync\(payload\.idempotencyKey, cached,/);
     assert.match(source, /Firebase에는 저장했지만 Google Sheets 반영에 실패했습니다/);
 });
+
+test('editing measurements keeps the previously prepared XLSX available', () => {
+    const inputHandlerStart = source.indexOf("formElement.addEventListener('input'");
+    const inputHandlerEnd = source.indexOf('addHomeStateToHistory()', inputHandlerStart);
+    const inputHandler = source.slice(inputHandlerStart, inputHandlerEnd);
+    assert.doesNotMatch(inputHandler, /preparedDownload\s*=\s*null/);
+    assert.doesNotMatch(inputHandler, /xlsxDownloadBtn/);
+    assert.match(source, /GET_XLSX_DOWNLOAD_URL/);
+    assert.match(source, /a\.href = result\.latest\.downloadUrl/);
+});

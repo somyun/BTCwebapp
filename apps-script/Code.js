@@ -154,10 +154,16 @@ function handleXlsxDownload(e) {
     const fileId = e.parameter.fileId;
     const filename = decodeURIComponent(e.parameter.filename || 'downloaded_file.xlsx');
     const sheetName = decodeURIComponent(e.parameter.sheetName);
+    const expectedRevision = e.parameter.expectedRevision
+        ? decodeURIComponent(e.parameter.expectedRevision)
+        : '';
     let tempSpreadsheetId = null;
 
     try {
         const originalSpreadsheet = SpreadsheetApp.openById(fileId);
+        if (expectedRevision) {
+            assertXlsxSourceRevision(originalSpreadsheet, sheetName, expectedRevision);
+        }
         const sourceSheet = originalSpreadsheet.getSheetByName(sheetName);
         if (!sourceSheet) throw new Error(`시트 '${sheetName}'을(를) 찾을 수 없습니다.`);
 
@@ -208,6 +214,24 @@ function handleXlsxDownload(e) {
             } catch (e) { }
         }
     }
+}
+
+function assertXlsxSourceRevision(spreadsheet, sheetName, expectedRevision) {
+    const expectedTime = new Date(expectedRevision).getTime();
+    if (!Number.isFinite(expectedTime)) throw new Error('INVALID_EXPECTED_REVISION');
+    const formListSheet = spreadsheet.getSheetByName(FORM_LIST_SHEET_NAME);
+    if (!formListSheet || formListSheet.getLastRow() < 2) {
+        throw new Error('FORM_LIST_ENTRY_NOT_FOUND');
+    }
+    const rows = formListSheet.getRange(2, 1, formListSheet.getLastRow() - 1, 3).getValues();
+    const normalizedSheetName = String(sheetName).normalize('NFC');
+    const match = rows.find(row => String(row[0]).normalize('NFC') === normalizedSheetName);
+    if (!match) throw new Error('FORM_LIST_ENTRY_NOT_FOUND');
+    const actualTime = match[2] instanceof Date
+        ? match[2].getTime()
+        : new Date(match[2]).getTime();
+    if (!Number.isFinite(actualTime)) throw new Error('INVALID_FORM_LIST_REVISION');
+    if (actualTime !== expectedTime) throw new Error('SOURCE_REVISION_MISMATCH');
 }
 
 // ... (나머지 기존 함수들: initializeFormListSheet, uploadFileBase64, recordUploadedForm, getFormList, etc.)

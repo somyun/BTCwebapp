@@ -7,9 +7,12 @@ console.log("Script.js 로드됨.");
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzuWS4Q5kTzDRH4IBpeXBa69KngElRdArtTCzTV0NDQsB3y4oABBIzrTLuPOZH5KOPP/exec';
 const SUBMIT_MEASUREMENTS_URL = 'https://asia-northeast3-btcwebapp-551bd.cloudfunctions.net/submitMeasurements';
 const GET_SUBMISSION_URL = 'https://asia-northeast3-btcwebapp-551bd.cloudfunctions.net/getMeasurementSubmission';
+const GET_XLSX_DOWNLOAD_URL = 'https://asia-northeast3-btcwebapp-551bd.cloudfunctions.net/getXlsxDownload';
 const SUBMISSION_POLL_INTERVAL_MS = 1000;
 const SUBMISSION_POLL_TIMEOUT_MS = 90000;
 const FUNCTION_REQUEST_TIMEOUT_MS = 20000;
+const XLSX_POLL_INTERVAL_MS = 5000;
+const XLSX_POLL_TIMEOUT_MS = 90000;
 
 // --- Firebase Config ---
 const firebaseConfig = {
@@ -950,16 +953,6 @@ function createDynamicForm(formData, formTitle) {
     formElement.addEventListener('input', () => {
         isMeasurementDirty = true;
         pendingSubmission = null;
-        preparedDownload = null;
-        xlsxPreparationId += 1;
-        const downloadButton = document.getElementById('xlsxDownloadBtn');
-        if (downloadButton) {
-            downloadButton.disabled = true;
-            downloadButton.style.backgroundColor = '#ccc';
-            downloadButton.style.color = '#666';
-            downloadButton.style.cursor = 'not-allowed';
-            downloadButton.textContent = '저장 후 XLSX';
-        }
         updateSubmissionStatus('입력값이 변경되었습니다.', 'idle');
     });
     addHomeStateToHistory();
@@ -970,119 +963,98 @@ function createDynamicForm(formData, formTitle) {
 }
 
 // --- XLSX 다운로드 준비 ---
-async function prepareXlsxInAdvance(fileId, sheetName, fileName, fileDateStr, preparationId) {
-    // GAS API는 fileId, sheetName, filename을 파라미터로 받아서 Base64를 리턴하도록 되어있음
-    try {
-        let url = `${GAS_API_URL}?fileId=${encodeURIComponent('ignored')}&sheetName=${encodeURIComponent(sheetName)}&filename=${encodeURIComponent(fileName)}`;
-        // 백엔드가 fileId를 필수라고 생각한다면 더미값 전달. backend_gas_v2.js에서는 openById(fileId)를 하므로
-        // IMPORTANT: backend_gas_v2.js의 handleXlsxDownload는 fileId를 받는다.
-        // 하지만 우리는 TARGET_SPREADSHEET_ID를 백엔드가 알고있다.
-        // 만약 백엔드가 fileId를 필수로 받는다면 여기서 TARGET_SPREADSHEET_ID를 알아야한다.
-        // 일단 사용자가 backend_gas_v2.js에 상수로 ID를 박았으므로, fileId파라미터가 없어도 동작하도록 백엔드를 수정하거나
-        // 아니면 여기서 상수로 ID를 가지고 있어야 한다.
-        // 프론트에 ID를 노출하고 싶지 않다면 백엔드 수정 필요.
-        // 지금은 backend_gas_v2.js가 fileId를 받아서 openById 한다고 가정되어 있음.
-        // 따라서 기존 로직 호환을 위해 더미 ID 또는 실제 ID가 필요함.
-        // 편의상 아래 상수를 정의해서 사용.
-    } catch (err) { }
-
-    // Note: Since we removed the ID injection, download feature might break if backend strictly requires ID param.
-    // For now, let's assume backend defaults to global ID if param is missing, OR we fetch it first.
-    // We will pass sheetName.
-
-    const options = { method: 'GET' };
-    // URL Construct again
-    // We need to pass TARGET_SPREADSHEET_ID... but we removed it from Index.html.
-    // Let's assume we pass 'default' and backend handles it, OR fetch 'getFormList' returned spreadsheetId.
-    const targetId = fileId || '19rgzRnTQtOwwW7Ts5NbBuItNey94dAZsEnO7Tk0cm6s'; // Fallback to hardcoded ID if needed
-
-    let fetchUrl = `${GAS_API_URL}?fileId=${encodeURIComponent(targetId)}&sheetName=${encodeURIComponent(sheetName)}&filename=${encodeURIComponent(fileName)}`;
-
-    try {
-        const res = await fetch(fetchUrl);
-        const json = await res.json();
-        if (!res.ok || json.error || !json.base64 || !json.filename) {
-            throw new Error(json.error || `XLSX_HTTP_${res.status}`);
-        }
-        if (preparationId !== xlsxPreparationId) return false;
-
-        preparedDownload = json;
-        const btn = document.getElementById('xlsxDownloadBtn');
-        if (btn) {
-            btn.disabled = false;
-            btn.style.backgroundColor = '#4CAF50';
-            btn.style.color = 'white';
-            btn.style.cursor = 'pointer';
-            btn.innerText = `⬇ ${fileDateStr} 엑셀`;
-        }
-        return true;
-    } catch (err) {
-        console.error(err);
-        if (preparationId !== xlsxPreparationId) return false;
-        preparedDownload = null;
-        const btn = document.getElementById('xlsxDownloadBtn');
-        if (btn) {
-            btn.disabled = false;
-            btn.innerText = 'XLSX 준비 다시 시도';
-        }
-        return false;
-    }
+async function fetchXlsxDownload(formKey, expectedRevision = null) {
+    return fetchFunctionJson(GET_XLSX_DOWNLOAD_URL, {
+        formKey,
+        ...(expectedRevision ? { expectedRevision } : {})
+    });
 }
 
-function xlsxFilename(sheetInfo = currentSheetInfo) {
-    const revision = sheetInfo?.lastModifiedDate || sheetInfo?.sourceRevision;
-    const parsedRevision = new Date(revision);
-    const filenameDate = Number.isNaN(parsedRevision.getTime()) ? new Date() : parsedRevision;
-    const date = `${String(filenameDate.getFullYear()).slice(-2)}${String(filenameDate.getMonth() + 1).padStart(2, '0')}${String(filenameDate.getDate()).padStart(2, '0')}`;
-    return {
-        date,
-        filename: `${sheetInfo.displayName || sheetInfo.sheetName}_${date}.xlsx`
-    };
+function xlsxDateForRevision(revision) {
+    const parsed = new Date(revision);
+    const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+    return `${String(date.getFullYear()).slice(-2)}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
 }
 
-async function prepareXlsxForCurrentRevision({ reportStatus = false } = {}) {
+function renderPreparedXlsx(download) {
+    preparedDownload = download;
+    const button = document.getElementById('xlsxDownloadBtn');
+    if (!button) return;
+    button.disabled = false;
+    button.style.backgroundColor = '#4CAF50';
+    button.style.color = 'white';
+    button.style.cursor = 'pointer';
+    button.textContent = `⬇ ${xlsxDateForRevision(download.revision)} 엑셀`;
+    delete button.dataset.prepareRetry;
+}
+
+async function prepareXlsxForCurrentRevision({ reportStatus = false, expectedRevision = null } = {}) {
     if (!currentSheetInfo) return false;
     const preparationId = ++xlsxPreparationId;
     const sheetInfo = { ...currentSheetInfo };
-    const { date, filename } = xlsxFilename(sheetInfo);
+    const desiredRevision = expectedRevision || sheetInfo.lastModifiedDate || sheetInfo.sourceRevision;
+    const date = xlsxDateForRevision(desiredRevision);
     const button = document.getElementById('xlsxDownloadBtn');
-    if (button) {
+    if (button && !preparedDownload) {
         button.disabled = true;
         button.textContent = `${date}.xlsx 준비중..`;
         delete button.dataset.prepareRetry;
     }
-    const prepared = await prepareXlsxInAdvance(
-        sheetInfo.spreadsheetId,
-        sheetInfo.sheetName,
-        filename,
-        date,
-        preparationId
-    );
+    const deadline = Date.now() + XLSX_POLL_TIMEOUT_MS;
+    do {
+        try {
+            const result = await fetchXlsxDownload(sheetInfo.formKey, desiredRevision);
+            if (preparationId !== xlsxPreparationId) return false;
+            if (result.latest) renderPreparedXlsx(result.latest);
+            if (result.status === 'ready' && result.latest) {
+                if (reportStatus) updateSubmissionStatus('저장 및 XLSX 준비 완료', 'synced');
+                return true;
+            }
+            if (result.status === 'unavailable' || result.status === 'failed') break;
+        } catch (error) {
+            console.error(error);
+            break;
+        }
+        await sleep(XLSX_POLL_INTERVAL_MS);
+    } while (Date.now() < deadline && preparationId === xlsxPreparationId);
+
     if (preparationId !== xlsxPreparationId) return false;
-    if (prepared) {
-        if (reportStatus) updateSubmissionStatus('저장 및 XLSX 준비 완료', 'synced');
-        return true;
+    if (!preparedDownload && button) {
+        button.disabled = false;
+        button.dataset.prepareRetry = 'true';
+        button.textContent = 'XLSX 준비 다시 시도';
     }
-    if (button) button.dataset.prepareRetry = 'true';
-    if (reportStatus) updateSubmissionStatus('저장 완료 · XLSX 준비 실패', 'xlsx-error');
+    if (reportStatus) updateSubmissionStatus('저장 완료 · XLSX 준비 지연', 'xlsx-error');
     return false;
 }
 
 async function triggerPreparedDownload(buttonId) {
     const button = document.getElementById(buttonId);
-    if (!preparedDownload && button?.dataset.prepareRetry === 'true') {
-        await prepareXlsxForCurrentRevision();
+    if (!currentSheetInfo?.formKey) return;
+    const originalText = button?.textContent;
+    if (button) button.disabled = true;
+    try {
+        const result = await fetchXlsxDownload(currentSheetInfo.formKey);
+        if (!result.latest) {
+            alert('파일이 아직 준비되지 않았습니다.');
+            return;
+        }
+        renderPreparedXlsx(result.latest);
+        const a = document.createElement('a');
+        a.href = result.latest.downloadUrl;
+        a.download = result.latest.filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    } catch (error) {
+        console.error(error);
+        alert(`XLSX 다운로드 오류: ${error.message}`);
+    } finally {
+        if (button) {
+            button.disabled = false;
+            if (!preparedDownload && originalText) button.textContent = originalText;
+        }
     }
-    if (!preparedDownload) {
-        alert('파일이 아직 준비되지 않았습니다.');
-        return;
-    }
-    const a = document.createElement('a');
-    a.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${preparedDownload.base64}`;
-    a.download = preparedDownload.filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
 }
 
 // --- 측정값 저장 ---
@@ -1195,7 +1167,10 @@ async function monitorSheetSync(idempotencyKey, initialStatus, savedForm) {
             await loadFormList();
             if (currentSheetInfo?.formKey === savedForm.formKey &&
                 currentSheetInfo?.sourceRevision === savedForm.sourceRevision) {
-                await prepareXlsxForCurrentRevision({ reportStatus: true });
+                await prepareXlsxForCurrentRevision({
+                    reportStatus: true,
+                    expectedRevision: status.sourceRevisionAfterSync || status.acceptedAt
+                });
             }
             return;
         }
@@ -1315,6 +1290,7 @@ async function loadSelectedForm() {
         document.getElementById('formSelect').value = currentSheetInfo ? currentSheetInfo.sheetName : '';
         return;
     }
+    xlsxPreparationId += 1;
 
     const formSelect = document.getElementById('formSelect');
     const selectedOption = formSelect.options[formSelect.selectedIndex];

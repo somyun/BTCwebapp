@@ -178,6 +178,9 @@ function publicSubmissionStatus(id, data) {
     dailyCacheDate: data.dailyCacheDate || null,
     sourceRevisionAfterCache: data.sourceRevisionAfterCache || null,
     sourceRevisionAfterSync: data.sourceRevisionAfterSync || null,
+    xlsxStatus: data.xlsxStatus || null,
+    xlsxJobId: data.xlsxJobId || null,
+    xlsxErrorCode: data.xlsxErrorCode || null,
     updatedCellCount: Number(data.updatedCellCount || 0)
   };
 }
