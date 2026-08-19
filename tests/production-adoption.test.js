@@ -120,7 +120,7 @@ test('test-only environment values do not leak into adopted production code', ()
 
 test('the existing public CAD loader remains in place without private Storage adoption', () => {
     const index = read('index.html');
-    assert.match(index, /<script src="map\.js\?v=hopo-cad-naver-6"><\/script>/);
+    assert.match(index, /<script src="map\.js\?v=hopo-cad-naver-7"><\/script>/);
     assert.doesNotMatch(index, /cad-storage\.js|firebasestorage\.googleapis\.com|storage\.googleapis\.com/);
 });
 

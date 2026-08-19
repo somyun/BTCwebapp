@@ -1,0 +1,1405 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <title>ERP 점검 웹앱</title>
+    <!--  Meta tag for mobile optimization -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #fff;
+            color: #222;
+            margin: 0;
+            padding: 8px;
+            min-height: 100vh;
+        }
+        .section {
+            border: 1px solid #eee;
+            background: #f8f8f8;
+            border-radius: 8px;
+            padding: 24px 20px 28px 20px;
+            margin: 40px auto 0 auto;
+            max-width: 480px;
+            box-sizing: border-box;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+        h1 {
+            margin-top: 12px;
+            margin-bottom: 16px;
+            font-size: 1.6em;
+            font-weight: bold;
+            letter-spacing: -1px;
+            text-align: center;
+        }
+        label {
+            display: block;
+            margin-top: 12px;
+            margin-bottom: 4px;
+            font-weight: bold;
+            font-size: 1.12em;
+        }
+        input[type="number"], input[type="text"], select, input[type="file"] {
+            width: 100%;
+            padding: 14px 10px;
+            margin-top: 4px;
+            margin-bottom: 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 1.12em;
+            background: #fff;
+            color: #222;
+            box-sizing: border-box;
+            transition: border 0.2s;
+        }
+        input[type="number"]:focus, input[type="text"]:focus, select:focus, input[type="file"]:focus {
+            border: 1.5px solid #4CAF50;
+            outline: none;
+        }
+        button {
+            width: 100%;
+            padding: 14px 0;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-top: 10px;
+            margin-bottom: 10px;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        /* 상태 메시지 */
+        #status {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 1.08em;
+            padding: 12px 20px;
+            border-radius: 8px;
+            display: none;
+            opacity: 0;
+            transition: opacity 0.3s ease-out;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            max-width: 90%;
+            min-width: 200px;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #status.visible { 
+            display: block; 
+            opacity: 1;
+        }
+        .error { color: #ff5252; background: #fff0f0; border: 1px solid #ffb3b3; }
+        .success { color: #4caf50; background: #f0fff0; border: 1px solid #b3ffb3; }
+        .loading { color: #2196f3; background: #f0f8ff; border: 1px solid #b3d8ff; }
+        /* 반응형: 태블릿/PC에서 section 폭 넓힘 */
+        @media (min-width: 768px) {
+            .section {
+                max-width: 540px;
+                padding: 32px 32px 36px 32px;
+            }
+            h1 {
+                font-size: 2.2em;
+            }
+            button {
+                font-size: 1.2em;
+            }
+        }
+        header {
+            display: flex; align-items: center; justify-content: space-between;
+            height: 56px; background: #fff; color: #222; border-bottom: 1px solid #eee;
+            padding: 0 12px;
+            position: relative;
+        }
+        .icon-btn {
+            background-color: transparent;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            border-radius: 5px;
+            margin: 0;
+            width: 38px;
+            height: 38px;
+            color: #222;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        .icon-btn:hover {
+            background-color: #f0f0f0;
+        }
+        .icon-btn svg {
+            width: 32px;
+            height: 32px;
+        }
+        .icon-btn.home-btn {
+            margin-right: 8px;
+            visibility: hidden;
+        }
+        .icon-btn.home-btn.visible {
+            visibility: visible;
+        }
+        .header-title {
+            flex: 1;
+            text-align: left;
+            margin: 0;
+            font-size: 1.8em;
+            font-weight: bold;
+            letter-spacing: -1px;
+        }
+        .hamburger-menu { cursor: pointer; padding: 10px; }
+        .hamburger-menu .bar {
+            width: 28px; height: 4px; background: #222; margin: 5px 0; border-radius: 2px;
+        }
+        .sidenav {
+            display: block;
+            position: fixed;
+            top: 0; right: -260px; width: 260px; height: 100%;
+            background: #f8f8f8; box-shadow: -2px 0 8px rgba(0,0,0,0.08);
+            z-index: 1002;
+            transition: right 0.3s cubic-bezier(0.4,0,0.2,1);
+        }
+        .sidenav.open {
+            right: 0;
+        }
+        .overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.2); z-index: 1001; display: none;
+        }
+        .overlay.visible { display: block; }
+        .form-group {
+            display: flex;
+            align-items: center;
+            gap: 1px;
+            margin-bottom: 0px;
+            background: #fff;
+            padding: 0px 0;
+            flex-wrap: nowrap;
+            min-width: 320px;
+            box-sizing: border-box;
+            justify-content: flex-start;
+        }
+        .item-location {
+            flex: 0 0 90px;
+            width: 90px;
+            font-weight: bold;
+            color: #222;
+            text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .item-detail {
+            flex: 1 1 0;
+            min-width: 0;
+            color: #333;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .form-group input[type='number'] {
+            flex: 0 0 90px;
+            width: 90px;
+            padding: 2px;
+            font-size: 1.12em;
+            box-sizing: border-box;
+            text-align: right;
+            margin-left: auto;
+            white-space: nowrap;
+            overflow: hidden;
+            margin-top: 12px;
+        }
+        .measurement-unit {
+            flex: 0 0 45px;
+            width: 45px;
+            color: #888;
+            text-align: left;
+            margin-left: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+        @media (max-width: 600px) {
+            .form-group {
+                max-width: 98vw;
+                min-width: 0;
+            }
+        }
+        .favorites-section {
+            transition: opacity 0.3s, max-height 0.3s, margin 0.3s;
+            overflow: hidden;
+            max-height: 200px; /* 충분한 높이 */
+            opacity: 1;
+            margin: 20px 0; /* 좌우 auto 대신 0으로 변경 */
+            max-width: 100%; /* 부모 너비에 맞게 100%로 변경 */
+            padding: 0 8px;
+            box-sizing: border-box;
+        }
+        .favorites-section.hidden {
+            max-height: 0;
+            opacity: 0;
+            margin: 0 auto; /* 숨겨질 때 마진도 제거 */
+            padding-top: 0;
+            padding-bottom: 0;
+        }
+        .favorites-section h3 {
+            font-size: 1.4em;
+            margin-bottom: 12px;
+            color: #333;
+        }
+        .fav-buttons-container {
+            display: flex;
+            gap: 10px;
+        }
+        .fav-button {
+            flex: 1;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1.1em;
+            transition: all 0.2s;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #222;
+        }
+        .fav-button:hover {
+            background-color: #e9e9e9;
+            border-color: #ccc;
+        }
+        .fav-button:disabled,
+        .fav-button:disabled:hover {
+            opacity: 0.6;
+            cursor: not-allowed;
+            background-color: #f0f0f0;
+            border-color: #ddd;
+        }
+        .fav-button.registered {
+            background-color: #e7f3ff;
+            border-color: #b3d8ff;
+            font-weight: bold;
+            color: #0b69d3;
+        }
+
+        /* Favorite Selection Modal */
+        .fav-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.4);
+            z-index: 2000;
+        }
+        .fav-modal-content {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 2001;
+            width: 90%;
+            max-width: 400px;
+        }
+        .fav-modal-content h4 { margin-top: 0; }
+        .fav-modal-content select { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; }
+        .fav-modal-buttons { display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px; }
+        .fav-modal-buttons button { padding: 8px 16px; border-radius: 4px; border: 1px solid #ccc; cursor: pointer; background: #f0f0f0; }
+        .fav-modal-buttons button.primary { background: #4CAF50; color: white; border-color: #4CAF50; }
+
+        /* Validation Warning Modal */
+        .validation-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.4);
+            z-index: 2000;
+        }
+        .validation-modal-content {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 2001;
+            width: 90%;
+            max-width: 400px;
+        }
+        .validation-modal-content h4 { 
+            margin-top: 0; 
+            color: #d32f2f;
+        }
+        .validation-modal-content p { 
+            margin: 15px 0;
+            line-height: 1.5;
+            white-space: pre-line;
+        }
+        .validation-modal-buttons { 
+            display: flex; 
+            justify-content: flex-end; 
+            gap: 10px; 
+            margin-top: 15px; 
+        }
+        .validation-modal-buttons button { 
+            padding: 8px 16px; 
+            border-radius: 4px; 
+            border: 1px solid #ccc; 
+            cursor: pointer; 
+            background: #f0f0f0; 
+        }
+        .validation-modal-buttons button.primary { 
+            background: #4CAF50; 
+            color: white; 
+            border-color: #4CAF50; 
+        }
+        .validation-modal-buttons button.danger { 
+            background: #d32f2f; 
+            color: white; 
+            border-color: #d32f2f; 
+        }
+
+        @media (min-width: 1024px) {
+            body {
+                background: #f0f2f5; /* 컨테이너가 돋보이도록 바디 배경색 변경 */
+            }
+            .app-container {
+                width: 30vw;
+                min-width: 480px;
+                max-width: 520px; /* 너무 넓어지지 않게 최대값 설정 */
+                margin: 0; /* 화면 좌측에 배치 */
+                background: #fff;
+                box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+                position: relative;
+                overflow-x: hidden; /* 사이드 메뉴가 밖으로 나가지 않게 */
+            }
+            .sidenav, .overlay {
+                position: absolute; /* fixed -> absolute로 변경하여 컨테이너 기준 배치 */
+            }
+        }
+        .sidenav-content {
+            padding: 20px;
+        }
+        .sidenav-section {
+            margin-bottom: 24px;
+        }
+        .sidenav-section h3 {
+            font-size: 1.3em;
+            margin-top: 0;
+            margin-bottom: 12px;
+            color: #333;
+        }
+        .sidenav-section input[type="file"],
+        .sidenav-section select {
+            margin-bottom: 12px;
+        }
+        .reset-section {
+            border-top: 1px solid #ddd;
+            padding-top: 16px;
+            margin-top: 16px;
+        }
+        .reset-button {
+            width: 100%;
+            padding: 10px;
+            background-color: #fbecec;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1.12em;
+            text-align: center;
+        }
+        .reset-button:hover {
+            background-color: #f8d7da;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div id="overlay" class="overlay"></div>
+
+        <header>
+            <button id="homeBtn" class="icon-btn home-btn" title="처음으로">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"> <path d="M0 0h24v24H0V0z" fill="none"/> <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8h5z"/></svg>
+            </button>
+            <h1 class="header-title">ERP 점검 웹앱</h1>
+            <div class="hamburger-menu" id="hamburger">
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+            </div>
+        </header>
+
+        <nav id="sidenav" class="sidenav">
+            <div class="sidenav-content">
+                <div id="upload-section" class="sidenav-section">
+                    <h3>새 양식 업로드</h3>
+                    <input type="file" id="excelFile" accept=".xls,.xlsx" />
+                    <button onclick="handleUpload()">업로드</button>
+                </div>
+        
+                <div class="form-selector sidenav-section">
+                    <h3>기존 양식 불러오기</h3>
+                    <select id="formSelect" onchange="loadSelectedForm()">
+                        <option value="">-- 양식을 선택해주세요 --</option>
+                    </select>
+                    <div id="formListStatus" style="margin-top: 5px; font-size: 0.9em;"></div>
+                </div>
+
+                <div class="sidenav-section reset-section">
+                    <button id="resetFavoritesBtn" class="reset-button">⭐ 즐겨찾기 초기화</button>
+                </div>
+            </div>
+        </nav>
+
+        <main>
+            <div id="status"></div>
+
+            <div id="favoritesSection" class="favorites-section">
+                <h3>⭐ 즐겨찾기</h3>
+                <div class="fav-buttons-container">
+                    <button id="favBtn1" class="fav-button" data-fav-id="1" disabled>로딩중</button>
+                    <button id="favBtn2" class="fav-button" data-fav-id="2" disabled>로딩중</button>
+                    <button id="favBtn3" class="fav-button" data-fav-id="3" disabled>로딩중</button>
+                </div>
+            </div>
+
+            <div id="dynamicFormContainer" class="form-section">
+                <h3>측정값 입력 폼</h3>
+                <p id="formMessage">햄버거 메뉴(☰)를 열어 새 파일을 업로드하거나 기존 양식을 선택해주세요.</p>
+            </div>
+        </main>
+    </div>
+
+    <script>
+      console.log("Index.html 스크립트 로드됨.");
+
+      let preparedDownload = null;
+      const WEBAPP_EXEC_URL = 'https://script.google.com/macros/s/AKfycbyoSMf94VffKSvIoBNJHKkQqY213h6M9KhTSBJ1BK9ed8dW64d50ZbjGWGu4n31bJB-/exec';
+
+      // 유효값 검증을 위한 전역 변수
+      let validationData = {};
+      let currentInputIndex = 0;
+
+      // --- Client-side Storage Helper Functions (using localStorage) ---
+      function saveToStorage(key, value) {
+        try {
+          localStorage.setItem(key, JSON.stringify(value));
+        } catch (e) {
+          console.error("Error saving to localStorage", e);
+          showStatus('즐겨찾기를 저장하는 데 실패했습니다.', 'error', 3000);
+        }
+      }
+
+      function getFromStorage(key) {
+        try {
+          const item = localStorage.getItem(key);
+          return item ? JSON.parse(item) : null;
+        } catch (e) {
+          console.error("Error reading from localStorage", e);
+          return null;
+        }
+      }
+
+      // --- Sidenav / Hamburger Menu Logic ---
+      const hamburger = document.getElementById('hamburger');
+      const sidenav = document.getElementById('sidenav');
+      const overlay = document.getElementById('overlay');
+
+      function closeMenu() {
+        sidenav.classList.remove('open');
+        overlay.classList.remove('visible');
+      }
+
+      function openMenu() {
+        sidenav.classList.add('open');
+        overlay.classList.add('visible');
+      }
+
+      hamburger.addEventListener('click', openMenu);
+      overlay.addEventListener('click', closeMenu);
+
+      document.getElementById('resetFavoritesBtn').addEventListener('click', function() {
+        if (confirm('정말로 모든 즐겨찾기를 초기화하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+            localStorage.removeItem('favorites');
+            favorites = {};
+            updateFavoriteButtons();
+            showStatus('즐겨찾기가 초기화되었습니다.', 'success', 3000);
+            closeMenu();
+        }
+      });
+
+      // --- Existing Script (with minor adjustments) ---
+      const GLOBAL_TARGET_SPREADSHEET_ID = '<?= TARGET_SPREADSHEET_ID ?>';
+      let currentSheetInfo = null;
+      let favorites = {};
+      let isMeasurementDirty = false;
+
+      // 웹페이지 로드 시 양식 목록 및 즐겨찾기 불러오기
+      window.onload = function() {
+        loadFormList();
+        initializeFavorites();
+        updateHomeButtonVisibility();
+        
+        // 초기 상태를 히스토리에 추가
+        addHomeStateToHistory();
+        
+        // 뒤로가기 버튼 감지 및 처리
+        window.addEventListener('popstate', function(event) {
+          // 뒤로가기 시 홈버튼 클릭과 동일한 동작 수행
+          document.getElementById('formSelect').value = '';
+          currentSheetInfo = null;
+          loadSelectedForm();
+          updateHomeButtonVisibility();
+        });
+      };
+
+      function showStatus(message, type, duration = 0) {
+          const statusDiv = document.getElementById('status');
+          
+          // 메시지가 없으면 숨김
+          if (!message) {
+            statusDiv.style.opacity = '0';
+            setTimeout(() => {
+              statusDiv.style.display = 'none';
+            }, 300); // 애니메이션 완료 후 숨김
+            return;
+          }
+          
+          // 기존 타이머가 있다면 제거
+          if (statusDiv.hideTimer) {
+            clearTimeout(statusDiv.hideTimer);
+          }
+          
+          statusDiv.textContent = message;
+          statusDiv.className = type; // 'success', 'error', 'loading'
+          statusDiv.style.display = 'block';
+          
+          // 강제로 리플로우 후 opacity 애니메이션 시작
+          statusDiv.offsetHeight; // 리플로우 강제
+          statusDiv.style.opacity = '1';
+          
+          if (duration > 0) {
+            statusDiv.hideTimer = setTimeout(() => {
+              statusDiv.style.opacity = '0';
+              setTimeout(() => {
+                statusDiv.style.display = 'none';
+              }, 300); // 애니메이션 완료 후 숨김
+            }, duration);
+          }
+      }
+
+      /**
+       * 사용자가 선택한 파일을 읽어 업로드 프로세스를 시작하는 메인 함수입니다.
+       */
+      function handleUpload() {
+        console.log("handleUpload 함수 시작.");
+        const fileInput = document.getElementById('excelFile');
+        const file = fileInput.files[0];
+        
+        if (!file) {
+          showStatus('파일을 선택해주세요.', 'error', 3000);
+          console.log("파일이 선택되지 않음.");
+          return;
+        }
+        
+        closeMenu(); // 메뉴 닫기
+        showStatus('파일을 읽는 중입니다...', 'loading');
+        console.log("파일 읽기 시작...");
+
+        const reader = new FileReader();
+        
+        reader.onload = function(e) {
+          console.log("FileReader.onload 실행됨.");
+          const base64Data = e.target.result.split(',')[1];
+          
+          // 파일 데이터를 객체로 만듭니다.
+          const fileData = {
+            name: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            data: base64Data
+          };
+
+          // 서버에 업로드를 처리하는 새 함수를 호출합니다.
+          // 첫 호출 시에는 사용자 선택(userChoice) 없이 호출합니다.
+          processFileUpload(fileData, undefined);
+        };
+        
+        reader.onerror = function(error) {
+          console.error('FileReader 오류 발생:', error);
+          const msg = `파일 읽기 오류: ${error.message}`;
+          showStatus(msg, 'error');
+        };
+        
+        reader.readAsDataURL(file);
+        setTimeout(updateHomeButtonVisibility, 0);
+      }
+
+      /**
+       * Apps Script 서버와 통신하여 파일 업로드를 처리하는 함수입니다.
+       * @param {object} fileData - 업로드할 파일 정보 (name, mimeType, data)
+       * @param {string|undefined} userChoice - 사용자의 선택 ('overwrite' 또는 'preserve')
+       */
+      function processFileUpload(fileData, userChoice) {
+        const statusMessage = userChoice ? '사용자 선택을 반영하여 처리 중...' : '파일을 업로드 및 처리 중입니다...';
+        showStatus(statusMessage, 'loading');
+        
+        const formContainer = document.getElementById('dynamicFormContainer');
+        if (!userChoice) { // 최초 업로드 시에만 폼 컨테이너 초기화
+            formContainer.innerHTML = '<h3>측정값 입력 폼</h3><p id="formMessage" class="loading">폼 생성 중...</p>';
+        }
+
+        console.log(`google.script.run.uploadFileBase64 호출 중... 선택: ${userChoice}`);
+
+        google.script.run
+          .withSuccessHandler(function(response) {
+            console.log("서버 응답:", response);
+
+            if (response.success) {
+              // [성공] 시나리오
+              showStatus(response.message, 'success', 3000);
+              document.getElementById('excelFile').value = ''; // 파일 입력 초기화
+              
+              if (response.preserved) {
+                // [보존] 선택 시: 기존 폼을 그대로 둡니다.
+                console.log("기존 시트가 보존되었습니다.");
+                formContainer.innerHTML = '<h3>측정값 입력 폼</h3><p id="formMessage">업로드가 취소되었습니다. 다른 파일을 업로드하거나 기존 양식을 선택하세요.</p>';
+
+              } else if (response.formData && Array.isArray(response.formData) && response.formData.length > 0) {
+                // [업로드/덮어쓰기 성공] 시: 새 폼을 생성합니다.
+                console.log("폼 데이터 존재. 동적 폼 생성 시작...");
+                const rawName = fileData.name.split('.').slice(0, -1).join('.');
+                const cleanSheetName = rawName.split('_')[0];
+
+                currentSheetInfo = {
+                    spreadsheetId: response.spreadsheetId,
+                    sheetName: response.sheetName,
+                    displayName: response.sheetName,
+                    lastModifiedDate: response.lastModifiedDate
+                };
+                console.log("현재 시트 정보 저장됨:", currentSheetInfo);
+
+                createDynamicForm(response.formData, response.sheetName);
+                loadFormList(); // 양식 목록 갱신
+              }
+
+            } else {
+              // [실패] 또는 [선택 필요] 시나리오
+              if (response.requiresChoice) {
+                // [선택 필요] 시: 사용자에게 확인 창을 띄웁니다.
+                console.log("서버에서 사용자 선택을 요청함.");
+                const isOverwrite = confirm(response.message);
+
+                if (isOverwrite) {
+                  // "확인" 클릭 -> 'overwrite' 옵션으로 재호출
+                  console.log("사용자가 '덮어쓰기'를 선택했습니다.");
+                  processFileUpload(fileData, 'overwrite');
+                } else {
+                  // "취소" 클릭 -> 'preserve' 옵션으로 재호출
+                  console.log("사용자가 '보존'을 선택했습니다.");
+                  processFileUpload(fileData, 'preserve');
+                }
+
+              } else {
+                // [일반 오류] 시: 오류 메시지를 표시합니다.
+                showStatus(response.message, 'error');
+                console.error("서버 응답 실패:", response.message);
+                formContainer.innerHTML = `<h3>측정값 입력 폼</h3><p id="formMessage" class="error">폼 생성 실패: ${response.message}</p>`;
+              }
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.error("google.script.run FailureHandler 실행됨. 오류:", error);
+            const msg = `업로드 처리 중 스크립트 오류가 발생했습니다: ${error.message}`;
+            showStatus(msg, 'error');
+            formContainer.innerHTML = `<h3>측정값 입력 폼</h3><p id="formMessage" class="error">${msg}</p>`;
+          })
+          .uploadFileBase64(fileData, userChoice); // 서버 함수에 fileData와 userChoice 전달
+      }
+
+      /**
+       * 서버에서 받은 폼 데이터를 기반으로 동적 입력 폼을 생성합니다.
+       * @param {Array<Object>} formData - 서버로부터 받은 폼 데이터 배열 (location, item, unit).
+       */
+      function createDynamicForm(formData, formTitle) {
+        console.log("createDynamicForm 함수 시작. 받은 데이터:", formData);
+
+        const formContainer = document.getElementById('dynamicFormContainer');
+
+        // 날짜 포맷 처리
+        let lastModified = currentSheetInfo?.lastModifiedDate || null;
+        let lastDateStr = '';
+        let fileDateStr = '';
+        if (lastModified) {
+          try {
+            const d = new Date(lastModified);
+            lastDateStr = `(${d.getFullYear().toString().slice(2, 4)}.${('0' + (d.getMonth() + 1)).slice(-2)}.${('0' + d.getDate()).slice(-2)})`;
+            fileDateStr = `${d.getFullYear().toString().slice(2, 4)}${('0' + (d.getMonth() + 1)).slice(-2)}${('0' + d.getDate()).slice(-2)}`;
+          } catch (e) {
+            lastDateStr = '';
+            fileDateStr = '';
+          }
+        }
+
+        let downloadBtnHtml = '';
+        if (formTitle) {
+          const displayName = currentSheetInfo.displayName || currentSheetInfo.sheetName;
+          const fileName = `${displayName}_${fileDateStr || ''}.xlsx`;
+
+          // 폼 로드시 백그라운드에서 미리 엑셀 생성해두기
+          prepareXlsxInAdvance(GLOBAL_TARGET_SPREADSHEET_ID, currentSheetInfo.sheetName, fileName);
+
+          downloadBtnHtml = `<button id="xlsxDownloadBtn"
+            onclick="triggerPreparedDownload('xlsxDownloadBtn')"
+            disabled
+            style="margin-left:10px; font-size:0.95em; padding: 6px 12px; background-color: #ccc; color: #666;
+                  border: none; border-radius: 4px; font-weight: bold; cursor: not-allowed;">
+            파일 준비중.. ${lastDateStr}
+          </button>`;
+        }
+
+        formContainer.innerHTML = `<h3 style="display:flex;align-items:center;gap:8px;"><span style="flex:1;min-width:80px;">${formTitle || '측정값 입력 폼'}</span>${downloadBtnHtml}</h3>`;
+        document.getElementById('favoritesSection').classList.add('hidden');
+
+        const formElement = document.createElement('form');
+        formElement.id = 'measurementForm';
+
+        if (!formData || !Array.isArray(formData) || formData.length === 0) {
+          console.error("createDynamicForm: 유효한 폼 데이터가 없습니다.");
+          const noDataMessage = document.createElement('p');
+          noDataMessage.textContent = '폼을 생성할 데이터가 없습니다.';
+          noDataMessage.className = 'error';
+          formContainer.appendChild(noDataMessage);
+          return;
+        }
+
+        // 유효값 검증 데이터 가져오기
+        const uniqueIds = formData.map(data => data.uniqueId).filter(id => id);
+        if (uniqueIds.length > 0) {
+          loadValidationData(uniqueIds);
+        }
+
+        let prevLocPrefix = null;
+        formData.forEach((data, index) => {
+          const currLocPrefix = (data.location || '').substring(0, 3);
+          if (index > 0 && prevLocPrefix !== null && prevLocPrefix !== currLocPrefix) {
+            const line = document.createElement('div');
+            line.style.borderTop = '1.5px solid #ddd';
+            line.style.margin = '8px 0';
+            formElement.appendChild(line);
+          }
+          prevLocPrefix = currLocPrefix;
+
+          const formGroup = document.createElement('div');
+          formGroup.className = 'form-group';
+
+          const locationSpan = document.createElement('span');
+          locationSpan.className = 'item-location';
+          locationSpan.textContent = data.location;
+
+          const itemSpan = document.createElement('span');
+          itemSpan.className = 'item-detail';
+
+          let itemText = '';
+          let placeholderText = '측정값';
+          const words = (data.item || '').trim().split(/\s+/).filter(w => w);
+          if (words.length > 1) {
+            placeholderText = words.pop();
+            itemText = words.join(' ');
+          } else if (words.length === 1) {
+            itemText = words[0];
+            placeholderText = words[0];
+          }
+          itemSpan.textContent = itemText;
+
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.inputMode = 'decimal';
+          input.step = 'any';
+          input.placeholder = placeholderText;
+          input.value = '';
+          input.dataset.location = data.location;
+          input.dataset.item = data.item;
+          input.dataset.unit = data.unit;
+          input.dataset.uniqueId = data.uniqueId; // 고유번호 추가
+          input.dataset.index = index; // 인덱스 추가
+
+          // 입력값 검증 이벤트 리스너 추가
+          input.addEventListener('blur', function() {
+            validateInputValue(this);
+          });
+
+          const unitSpan = document.createElement('span');
+          unitSpan.className = 'measurement-unit';
+          unitSpan.textContent = data.unit || '';
+
+          formGroup.appendChild(locationSpan);
+          formGroup.appendChild(itemSpan);
+          formGroup.appendChild(input);
+          formGroup.appendChild(unitSpan);
+
+          formElement.appendChild(formGroup);
+        });
+
+        const submitButton = document.createElement('button');
+        submitButton.type = 'button';
+        submitButton.textContent = '측정값 저장';
+        submitButton.id = 'saveMeasurements';
+        submitButton.onclick = saveMeasurements;
+        formElement.appendChild(submitButton);
+
+        formContainer.appendChild(formElement);
+
+        console.log("동적 폼 생성 완료.");
+        formElement.addEventListener('input', () => isMeasurementDirty = true);
+        
+        // 양식 로드 시 히스토리에 즐겨찾기 페이지 상태 추가
+        addHomeStateToHistory();
+      }
+
+      async function prepareXlsxInAdvance(fileId, sheetName, fileName) {
+        try {
+          const url = `${WEBAPP_EXEC_URL}?fileId=${encodeURIComponent(fileId)}&sheetName=${encodeURIComponent(sheetName)}&filename=${encodeURIComponent(fileName)}`;
+          const res = await fetch(url);
+          const json = await res.json();
+          if (json.error) throw new Error(json.error);
+          preparedDownload = json; // 미리 저장
+          
+          // 파일 준비 완료 후 버튼 상태 업데이트
+          const btn = document.getElementById('xlsxDownloadBtn');
+          if (btn) {
+            btn.disabled = false;
+            btn.style.backgroundColor = '#4CAF50';
+            btn.style.color = 'white';
+            btn.style.cursor = 'pointer';
+            btn.innerText = `⬇ ${fileName}`;
+          }
+        } catch (err) {
+          console.error('사전 다운로드 준비 실패:', err);
+          preparedDownload = null;
+          
+          // 오류 발생 시 버튼 상태 업데이트
+          const btn = document.getElementById('xlsxDownloadBtn');
+          if (btn) {
+            btn.disabled = true;
+            btn.style.backgroundColor = '#ffcccc';
+            btn.style.color = '#cc0000';
+            btn.style.cursor = 'not-allowed';
+            btn.innerText = '파일 준비 실패';
+          }
+        }
+      }
+
+      function triggerPreparedDownload(buttonId) {
+        const btn = document.getElementById(buttonId);
+        if (!preparedDownload) {
+          alert('파일이 아직 준비되지 않았습니다.');
+          return;
+        }
+        const a = document.createElement('a');
+        a.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${preparedDownload.base64}`;
+        a.download = preparedDownload.filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+
+      /**
+       * "측정값 저장" 버튼 클릭 시 호출됩니다.
+       * 폼에서 입력된 측정값을 수집하여 서버로 전송합니다.
+       */
+      function saveMeasurements() {
+        console.log("saveMeasurements 함수 시작.");
+        if (!currentSheetInfo || !currentSheetInfo.spreadsheetId || !currentSheetInfo.sheetName) {
+            showStatus("저장할 시트 정보가 없습니다. 파일을 먼저 업로드하거나 기존 양식을 선택해주세요.", 'error', 3000);
+            console.error("저장할 시트 정보 없음.");
+            return;
+        }
+
+        showStatus('측정값을 저장 중입니다...', 'loading');
+        console.log("측정값 수집 시작.");
+
+        const formInputs = document.querySelectorAll('#measurementForm input[type="number"]');
+        const measurementsToSave = [];
+
+        formInputs.forEach(input => {
+            measurementsToSave.push({
+                location: input.dataset.location, // D열 값
+                item: input.dataset.item,      // E열 값
+                value: input.value,            // 입력된 측정값
+                unit: input.dataset.unit       // G열 값
+            });
+        });
+
+        console.log("수집된 측정값:", measurementsToSave);
+        
+        // 서버 함수 호출
+        google.script.run
+            .withSuccessHandler(function(response) {
+                console.log("저장 성공 응답:", response);
+                if (response.success) {
+                    showStatus(response.message, 'success', 3000);
+                    loadFormList(); // 저장 후 목록 갱신 (최종 변경 일시 반영)
+                    
+                    // 측정값 저장 완료 후 다운로드 버튼 갱신
+                    if (currentSheetInfo && currentSheetInfo.sheetName) {
+                        const displayName = currentSheetInfo.displayName || currentSheetInfo.sheetName;
+                        const d = new Date();
+                        const fileName = `${displayName}_${d.getFullYear().toString().slice(2, 4)}${('0' + (d.getMonth() + 1)).slice(-2)}${('0' + d.getDate()).slice(-2)}.xlsx`;
+                        
+                        // 다운로드 버튼을 "파일 준비중" 상태로 변경
+                        const btn = document.getElementById('xlsxDownloadBtn');
+                        if (btn) {
+                            btn.disabled = true;
+                            btn.style.backgroundColor = '#ccc';
+                            btn.style.color = '#666';
+                            btn.style.cursor = 'not-allowed';
+                            btn.innerText = '파일 준비중..';
+                        }
+                        
+                        // 새로운 측정값으로 엑셀 파일 다시 준비
+                        prepareXlsxInAdvance(GLOBAL_TARGET_SPREADSHEET_ID, currentSheetInfo.sheetName, fileName);
+                    }
+                } else {
+                    showStatus(response.message, 'error');
+                }
+            })
+            .withFailureHandler(function(error) {
+                console.error("측정값 저장 실패:", error);
+                const msg = `측정값 저장 중 오류 발생: ${error.message}`;
+                showStatus(msg, 'error');
+            })
+            .saveMeasurementsToSheet(GLOBAL_TARGET_SPREADSHEET_ID, currentSheetInfo.sheetName, measurementsToSave);
+
+        isMeasurementDirty = false;
+      }
+
+      function loadFormList() {
+          console.log("loadFormList 함수 시작.");
+          const formSelect = document.getElementById('formSelect');
+          const formListStatus = document.getElementById('formListStatus');
+          const originalValue = formSelect.value;
+          // 버튼을 다시 비활성화 (새로고침 등 다시 로드될 경우 대비)
+          document.querySelectorAll('.fav-button').forEach(btn => btn.disabled = true);
+
+          formSelect.innerHTML = '<option value="">-- 양식을 선택해주세요 --</option>'; 
+          formListStatus.textContent = '양식 목록 불러오는 중...';
+          formListStatus.className = 'loading';
+
+          google.script.run
+              .withSuccessHandler(function(formList) {
+                  console.log("양식 목록 불러오기 성공:", formList);
+                  if (formList && formList.length > 0) {
+                      formList.sort((a,b) => new Date(b.lastModifiedDate) - new Date(a.lastModifiedDate));
+                      formList.forEach(form => {
+                          const option = document.createElement('option');
+                          option.value = form.sheetName;
+                          const cleanName = form.sheetName.split('_')[0];
+                          option.textContent = `${cleanName} (수정: ${formatDateForDisplay(form.lastModifiedDate)})`;
+                          option.dataset.displayName = cleanName;
+                          option.dataset.lastModifiedDate = form.lastModifiedDate;
+                          formSelect.appendChild(option);
+                      });
+                      formSelect.value = originalValue;
+                      formListStatus.textContent = '양식 목록 로드 완료.';
+                      formListStatus.className = 'success';
+                  } else {
+                      formListStatus.textContent = '저장된 양식이 없습니다.';
+                      formListStatus.className = '';
+                  }
+                  // 양식 로드 후 즐겨찾기 버튼 활성화 및 상태 업데이트
+                  document.querySelectorAll('.fav-button').forEach(btn => btn.disabled = false);
+                  updateFavoriteButtons();
+              })
+              .withFailureHandler(function(error) {
+                  console.error("양식 목록 불러오기 실패:", error);
+                  formListStatus.textContent = `양식 목록 불러오기 오류: ${error.message}`;
+                  formListStatus.className = 'error';
+                  // 실패 시에도 버튼 활성화하여 사용자가 다시 시도하거나 오류를 인지할 수 있도록 함
+                  document.querySelectorAll('.fav-button').forEach(btn => btn.disabled = false);
+                  updateFavoriteButtons(); // '비어있음'으로라도 표시
+              })
+              .getFormList();
+      }
+
+      function loadSelectedForm() {
+        if (isMeasurementDirty) {
+          if (!confirm('입력한 측정값이 저장되지 않았습니다. 정말로 다른 양식으로 이동하시겠습니까?')) {
+            const formSelect = document.getElementById('formSelect');
+            formSelect.value = currentSheetInfo ? currentSheetInfo.sheetName : '';
+            return;
+          }
+        }
+        isMeasurementDirty = false;
+        const formSelect = document.getElementById('formSelect');
+        const selectedOption = formSelect.options[formSelect.selectedIndex];
+        const selectedSheetName = selectedOption.value;
+        const displayName = selectedOption.dataset.displayName;
+        const lastModifiedDate = selectedOption.dataset.lastModifiedDate;
+        const formContainer = document.getElementById('dynamicFormContainer');
+        closeMenu();
+        if (!selectedSheetName) {
+          formContainer.innerHTML = '<h3>측정값 입력 폼</h3><p id="formMessage">햄버거 메뉴(☰)를 열어 새 파일을 업로드하거나 기존 양식을 선택해주세요.</p>';
+          currentSheetInfo = null;
+          document.getElementById('favoritesSection').classList.remove('hidden');
+          updateHomeButtonVisibility();
+          return;
+        }
+        showStatus(`양식 '${displayName}'를 불러오는 중...`, 'loading');
+        formContainer.innerHTML = '<h3>측정값 입력 폼</h3><p id="formMessage" class="loading">폼 생성 중...</p>';
+        google.script.run
+          .withSuccessHandler(function(formData) {
+            if (formData && Array.isArray(formData) && formData.length > 0) {
+              
+              // ==================== [수정 2] ====================
+              // currentSheetInfo를 먼저 업데이트합니다.
+              currentSheetInfo = {
+                spreadsheetId: GLOBAL_TARGET_SPREADSHEET_ID,
+                sheetName: selectedSheetName,
+                displayName: displayName,
+                lastModifiedDate: lastModifiedDate
+              };
+              
+              // 업데이트된 정보를 기반으로 폼을 생성합니다.
+              createDynamicForm(formData, displayName);
+              // ================================================
+
+              showStatus(`양식 '${displayName}' 불러오기 완료`, 'success', 3000);
+              updateHomeButtonVisibility();
+            } else {
+              const msg = '선택된 양식에서 측정값 폼을 생성할 데이터를 찾을 수 없습니다.';
+              formContainer.innerHTML = `<h3>측정값 입력 폼</h3><p id="formMessage" class="error">${msg}</p>`;
+              showStatus(`오류: 양식 '${displayName}'의 데이터가 유효하지 않습니다.`, 'error');
+              currentSheetInfo = null;
+              document.getElementById('favoritesSection').classList.remove('hidden');
+              updateHomeButtonVisibility();
+            }
+          })
+          .withFailureHandler(function(error) {
+            formContainer.innerHTML = `<h3>측정값 입력 폼</h3><p id="formMessage" class="error">양식 불러오기 오류: ' + error.message + '</p>`;
+            showStatus(`양식 불러오기 오류: ${error.message}`, 'error');
+            currentSheetInfo = null;
+            document.getElementById('favoritesSection').classList.remove('hidden');
+            updateHomeButtonVisibility();
+          })
+          .getFormDataForWeb(selectedSheetName);
+      }
+
+      // --- Favorites Logic ---
+      function initializeFavorites() {
+        const favData = getFromStorage('favorites');
+        if (favData) {
+            favorites = favData;
+        }
+        // 버튼 상태 업데이트는 loadFormList 성공/실패 핸들러에서 호출
+        // updateFavoriteButtons(); 
+
+        document.getElementById('favoritesSection').addEventListener('click', handleFavoriteClick);
+      }
+
+      function updateFavoriteButtons() {
+        for (let i = 1; i <= 3; i++) {
+            const btn = document.getElementById(`favBtn${i}`);
+            if (favorites[i]) {
+                const cleanName = favorites[i].displayName;
+                btn.textContent = cleanName;
+                btn.classList.add('registered');
+            } else {
+                btn.textContent = '비어있음';
+                btn.classList.remove('registered');
+            }
+        }
+      }
+
+      function handleFavoriteClick(event) {
+        if (!event.target.matches('.fav-button')) return;
+
+        const favId = event.target.dataset.favId;
+
+        if (favorites[favId]) { // 즐겨찾기 로드
+            const favInfo = favorites[favId];
+            showStatus(`즐겨찾기 '${favInfo.displayName}' 로드 중...`, 'loading');
+            const formSelect = document.getElementById('formSelect');
+            // 1. value(시트명)로 먼저 찾기
+            let foundOption = [...formSelect.options].find(opt => opt.value === favInfo.sheetName);
+            // 2. 없으면 displayName(텍스트)로 찾기 (드롭다운 표시명과 즐겨찾기 버튼명이 일치하면 매칭)
+            if (!foundOption) {
+              foundOption = [...formSelect.options].find(opt => (opt.dataset.displayName || opt.textContent.split(' (')[0]) === favInfo.displayName);
+            }
+            if (foundOption) {
+              formSelect.value = foundOption.value;
+              loadSelectedForm();
+            } else {
+              // 둘 다 없으면 즐겨찾기 슬롯 초기화
+              showStatus(`즐겨찾기된 양식 '${favInfo.displayName}'를 목록에서 찾을 수 없어 즐겨찾기를 초기화합니다.`, 'error', 4000);
+              delete favorites[favId];
+              saveToStorage('favorites', favorites);
+              updateFavoriteButtons();
+            }
+        } else { // 즐겨찾기 등록
+            if (currentSheetInfo && currentSheetInfo.sheetName) {
+                if (confirm(`현재 양식 '${currentSheetInfo.displayName}'를 이 즐겨찾기에 등록하시겠습니까?`)) {
+                    favorites[favId] = {
+                        sheetName: currentSheetInfo.sheetName,
+                        displayName: currentSheetInfo.displayName
+                    };
+                    saveToStorage('favorites', favorites);
+                    updateFavoriteButtons();
+                    showStatus(`'${currentSheetInfo.displayName}'가 즐겨찾기에 등록되었습니다.`, 'success', 3000);
+                }
+            } else {
+                // 양식이 로드되지 않았을 경우, 선택 팝업을 띄움
+                promptForFavoriteSelection(favId);
+            }
+        }
+      }
+
+      function promptForFavoriteSelection(favId) {
+        const formSelect = document.getElementById('formSelect');
+        if (formSelect.options.length <= 1) {
+            showStatus('등록할 양식이 없습니다. 먼저 새 양식을 업로드해주세요.', 'error', 3000);
+            return;
+        }
+
+        const overlay = document.createElement('div');
+        overlay.className = 'fav-modal-overlay';
+
+        const modal = document.createElement('div');
+        modal.className = 'fav-modal-content';
+
+        modal.innerHTML = `
+            <h4>즐겨찾기 등록</h4>
+            <p>이 슬롯에 등록할 양식을 선택해주세요.</p>
+            <select id="favModalSelect"></select>
+            <div class="fav-modal-buttons">
+                <button id="favModalCancel">취소</button>
+                <button id="favModalRegister" class="primary">등록</button>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+
+        const modalSelect = document.getElementById('favModalSelect');
+        for (let i = 1; i < formSelect.options.length; i++) {
+            const clonedOption = formSelect.options[i].cloneNode(true);
+            const cleanName = clonedOption.dataset.displayName || clonedOption.textContent.split(' (')[0];
+            clonedOption.textContent = cleanName; // 팝업에서는 수정 날짜 없이 깔끔한 이름만 보여줌
+            modalSelect.appendChild(clonedOption);
+        }
+
+        function closeModal() {
+            document.body.removeChild(overlay);
+            document.body.removeChild(modal);
+        }
+
+        document.getElementById('favModalRegister').onclick = function() {
+            const selectedOption = modalSelect.options[modalSelect.selectedIndex];
+            const sheetName = selectedOption.value;
+            const displayName = selectedOption.dataset.displayName;
+
+            favorites[favId] = { sheetName, displayName };
+            saveToStorage('favorites', favorites);
+            updateFavoriteButtons();
+            showStatus(`'${displayName}'가 즐겨찾기에 등록되었습니다.`, 'success', 3000);
+            closeModal();
+        };
+
+        document.getElementById('favModalCancel').onclick = closeModal;
+        overlay.onclick = closeModal;
+      }
+
+      // 날짜를 사용자 친화적인 형식으로 변환하는 헬퍼 함수
+      function formatDateForDisplay(isoString) {
+          if (!isoString) return '알 수 없음';
+          try {
+              const date = new Date(isoString);
+              const now = new Date();
+              const diffSeconds = Math.round((now - date) / 1000);
+              const diffMinutes = Math.round(diffSeconds / 60);
+              const diffHours = Math.round(diffMinutes / 60);
+              const diffDays = Math.round(diffHours / 24);
+
+              if (diffSeconds < 60) return `${diffSeconds}초 전`;
+              if (diffMinutes < 60) return `${diffMinutes}분 전`;
+              if (diffHours < 24) return `${diffHours}시간 전`;
+              if (diffDays <= 7) return `${diffDays}일 전`;
+              
+              return date.toLocaleDateString('ko-KR');
+          } catch (e) {
+              console.error("날짜 포맷 오류:", e);
+              return isoString; 
+          }
+      }
+
+      // 홈버튼 표시/숨김 함수
+      function updateHomeButtonVisibility() {
+        const homeBtn = document.getElementById('homeBtn');
+        if (currentSheetInfo && currentSheetInfo.sheetName) {
+          homeBtn.classList.add('visible');
+        } else {
+          homeBtn.classList.remove('visible');
+        }
+      }
+      // 홈버튼 클릭 시 즐겨찾기 페이지로 이동
+      document.getElementById('homeBtn').addEventListener('click', function() {
+        document.getElementById('formSelect').value = '';
+        currentSheetInfo = null;
+        loadSelectedForm();
+        updateHomeButtonVisibility();
+        addHomeStateToHistory(); // 히스토리에 상태 추가
+      });
+
+      window.addEventListener('beforeunload', function(e) {
+        if (isMeasurementDirty) {
+          e.preventDefault();
+          e.returnValue = '입력한 측정값이 저장되지 않았습니다. 정말로 페이지를 이동하시겠습니까?';
+          return e.returnValue;
+        }
+      });
+
+      // 히스토리에 즐겨찾기 페이지 상태 추가
+      function addHomeStateToHistory() {
+        const state = { page: 'home' };
+        const title = 'ERP 점검 웹앱 - 즐겨찾기';
+        const url = window.location.pathname + '?page=home';
+        history.pushState(state, title, url);
+      }
+
+      // --- 유효값 검증 관련 함수들 ---
+      
+      /**
+       * DB시트에서 유효값 검증 데이터를 가져오는 함수
+       * @param {Array<string>} uniqueIds - 고유번호 배열
+       */
+      function loadValidationData(uniqueIds) {
+        console.log("loadValidationData 함수 시작. 고유번호:", uniqueIds);
+        
+        google.script.run
+          .withSuccessHandler(function(data) {
+            console.log("유효값 검증 데이터 로드 완료:", data);
+            validationData = data;
+          })
+          .withFailureHandler(function(error) {
+            console.error("유효값 검증 데이터 로드 실패:", error);
+            validationData = {};
+          })
+          .getValidationDataFromDB(uniqueIds);
+      }
+
+      /**
+       * 입력값이 유효범위를 벗어났는지 검증하는 함수
+       * @param {HTMLInputElement} input - 검증할 입력 요소
+       */
+      function validateInputValue(input) {
+        const value = parseFloat(input.value);
+        const uniqueId = input.dataset.uniqueId;
+        
+        if (!uniqueId || isNaN(value) || input.value.trim() === '') {
+          return; // 값이 없거나 숫자가 아니면 검증하지 않음
+        }
+
+        const validationInfo = validationData[uniqueId];
+        if (!validationInfo) {
+          return; // 검증 데이터가 없으면 검증하지 않음
+        }
+
+        const minValue = parseFloat(validationInfo.minValue);
+        const maxValue = parseFloat(validationInfo.maxValue);
+        const recentValue = validationInfo.recentValue;
+        const recentDate = validationInfo.recentDate;        
+
+        // 유효범위를 벗어났는지 확인
+        if (!isNaN(minValue) && !isNaN(maxValue) && (value < minValue || value > maxValue)) {
+          showValidationWarning(input, value, minValue, maxValue, recentValue, recentDate);
+        }
+      }
+
+      /**
+       * 유효값 범위 경고 모달을 표시하는 함수
+       * @param {HTMLInputElement} input - 경고를 표시할 입력 요소
+       * @param {number} value - 입력된 값
+       * @param {number} minValue - 최소 유효값
+       * @param {number} maxValue - 최대 유효값
+       * @param {string} recentValue - 최근 측정값
+       * @param {string} recentDate - 최근 측정일
+       */
+      function showValidationWarning(input, value, minValue, maxValue, recentValue, recentDate) {
+        const overlay = document.createElement('div');
+        overlay.className = 'validation-modal-overlay';
+
+        const modal = document.createElement('div');
+        modal.className = 'validation-modal-content';
+
+        const recentValueText = recentValue ? recentValue : '없음';
+        modal.innerHTML = `
+          <h4>⚠️ 유효값 범위 경고</h4>
+          <p>입력값이 예상 유효범위를 벗어납니다.</p>
+          <table style="border-collapse: collapse; margin-bottom: 1em;">
+            <tr>
+              <td style="padding-right: 1em;">${recentDate} 측정값 : </td>
+              <td>${recentValueText}</td>
+            </tr>
+            <tr>
+              <td>현재 입력값 : </td>
+              <td>${input.value}</td>
+            </tr>
+          </table>
+          <p>입력값을 수정하시겠습니까?</p>
+          <div class="validation-modal-buttons">
+              <button id="validationModalYes" class="primary">예</button>
+              <button id="validationModalNo" class="danger">아니오</button>
+          </div>
+        `;
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+
+        function closeModal() {
+          document.body.removeChild(overlay);
+          document.body.removeChild(modal);
+        }
+
+        // "예" 버튼 클릭 시 입력값 지우고 포커스
+        document.getElementById('validationModalYes').onclick = function() {
+          input.value = '';
+          input.focus();
+          closeModal();
+        };
+
+        // "아니오" 버튼 클릭 시 그대로 유지하고 다음 입력칸으로 이동
+        document.getElementById('validationModalNo').onclick = function() {
+          closeModal();
+          // 다음 입력칸으로 이동
+          const inputs = document.querySelectorAll('#measurementForm input[type="number"]');
+          const currentIndex = parseInt(input.dataset.index);
+          if (currentIndex < inputs.length - 1) {
+            inputs[currentIndex + 1].focus();
+          }
+        };
+
+        // 오버레이 클릭 시 모달 닫기
+        overlay.onclick = closeModal;
+      }
+    </script>
+  </body>
+</html>

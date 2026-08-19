@@ -41,6 +41,7 @@ test('display settings button toggles the layer panel accessibly', () => {
 
 test('mobile pinch relies on the native NAVER overlay transform', () => {
     assert.match(mapSource, /addEventListener\('touchmove', updatePinch/);
+    assert.match(mapSource, /overlayZoomEffect: 'overlayLayer'/);
     assert.doesNotMatch(mapSource, /canvas\.style\.transform = .*scale/);
     assert.doesNotMatch(styles, /\.cad-map-overlay\.pinching/);
 });

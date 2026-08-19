@@ -1170,7 +1170,6 @@
 
     async function initialize() {
         const loading = getElement('mapLoading');
-
         try {
             const results = await Promise.all([loadNaverMapSdk(), loadManifest()]);
             manifest = results[1];
@@ -1189,6 +1188,7 @@
                     mapTypeId: window.naver.maps.MapTypeId.SATELLITE,
                     mapTypeControl: false,
                     scaleControl: true,
+                    overlayZoomEffect: 'overlayLayer',
                     zoomControl: false
                 });
                 bindMapEvents();
@@ -1226,6 +1226,8 @@
                 loading.classList.add('error');
             }
         }
+        new window.naver.maps.Marker({ map, position: map.getCenter() });
+
     }
 
     window.BWAMap = {
