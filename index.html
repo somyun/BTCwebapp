@@ -5,9 +5,11 @@
     <meta charset="utf-8">
     <title>ERP 점검 웹앱</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- NAVER Cloud Platform > Maps > Dynamic Map의 ncpKeyId를 입력하고 운영 Web 서비스 URL을 등록하세요. -->
+    <meta name="naver-maps-ncp-key-id" content="147egmm9a5">
     <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; connect-src https://script.google.com https://script.googleusercontent.com https://*.googleusercontent.com https://firestore.googleapis.com https://asia-northeast3-btcwebapp-551bd.cloudfunctions.net https://firebaseinstallations.googleapis.com https://fcmregistrations.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://dapi.kakao.com https://*.daumcdn.net http://*.daumcdn.net; img-src 'self' data: https://*.daumcdn.net http://*.daumcdn.net https://*.kakaocdn.net; style-src 'self' 'unsafe-inline'; script-src 'self' https://www.gstatic.com https://cdnjs.cloudflare.com https://dapi.kakao.com https://*.daumcdn.net http://*.daumcdn.net; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'">
-    <link rel="stylesheet" href="style.css?v=production-adoption-2">
+        content="default-src 'self'; connect-src https://script.google.com https://script.googleusercontent.com https://*.googleusercontent.com https://firestore.googleapis.com https://asia-northeast3-btcwebapp-551bd.cloudfunctions.net https://firebaseinstallations.googleapis.com https://fcmregistrations.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://oapi.map.naver.com https://*.pstatic.net; img-src 'self' data: https://*.pstatic.net; style-src 'self' 'unsafe-inline'; script-src 'self' https://www.gstatic.com https://cdnjs.cloudflare.com https://oapi.map.naver.com https://*.pstatic.net; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+    <link rel="stylesheet" href="style.css?v=production-adoption-3">
     <link rel="prefetch" href="./notifications.html?v=production-notifications-3" as="document">
     <link rel="prefetch" href="./notification-settings.html?v=production-notifications-3" as="document">
     <link rel="prefetch" href="./notifications.css?v=production-notifications-1" as="style">
@@ -97,7 +99,7 @@
 
             <section id="mapView" class="map-view view-hidden" aria-label="차량기지 도면 지도">
                 <div id="mapZoomStage" class="map-zoom-stage">
-                    <div id="kakaoMap" class="kakao-map" aria-label="카카오 지도"></div>
+                    <div id="naverMap" class="naver-map" aria-label="네이버 지도"></div>
                     <svg id="cadOverlay" class="cad-map-overlay" aria-hidden="true"
                         xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
                 </div>
@@ -109,7 +111,6 @@
                             title="일반지도로 전환">위성지도</button>
                         <button id="displaySettingsBtn" type="button" aria-controls="cadLayerPanel"
                             aria-expanded="false">표시설정</button>
-                        <button id="detailZoomBtn" type="button" aria-pressed="false">추가확대</button>
                         <button id="mapSearchBtn" class="map-search-open" type="button" aria-label="도면 문자 검색"
                             title="도면 문자 검색">
                             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -128,6 +129,17 @@
                         <p id="mapSearchStatus" class="map-search-status" role="status" aria-live="polite"></p>
                         <div id="mapSearchList" class="map-search-list"></div>
                     </section>
+                    <div id="mapSearchNavigation" class="map-search-navigation" aria-label="검색 결과 이동" hidden>
+                        <span id="mapSearchNavigationText" class="map-search-navigation-text">검색텍스트</span>
+                        <span id="mapSearchNavigationLayer" class="map-search-navigation-layer">레이어</span>
+                        <span id="mapSearchNavigationStatus" class="map-search-navigation-count" aria-live="polite">0/0</span>
+                        <button id="mapSearchPrevBtn" type="button" aria-label="이전 검색 결과">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 15 7-7 7 7"></path></svg>
+                        </button>
+                        <button id="mapSearchNextBtn" type="button" aria-label="다음 검색 결과">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 9 7 7 7-7"></path></svg>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="map-zoom-controls" aria-label="지도 확대 축소">
@@ -136,7 +148,7 @@
                 </div>
 
                 <button id="currentLocationBtn" class="map-current-location" type="button"
-                    title="현재 위치를 표시하고 이동" aria-label="현재 위치로 이동">
+                    title="현재위치" aria-label="현재위치 실시간 추적 시작" aria-pressed="false">
                     <svg viewBox="0 0 32 32" aria-hidden="true">
                         <circle cx="16" cy="16" r="10.5"></circle>
                         <circle class="location-dot" cx="16" cy="16" r="2.2"></circle>
@@ -160,10 +172,14 @@
                         <span>투명도</span>
                         <input id="cadOpacity" type="range" min="20" max="100" value="80">
                     </label>
-                    <label class="cad-layer-setting cad-label-setting">
-                        <input id="cadLabelToggle" type="checkbox" checked>
-                        <span>문자도 표시</span>
-                    </label>
+                    <div class="cad-layer-setting cad-label-setting">
+                        <label><input id="cadLabelToggle" type="checkbox" checked><span>문자</span></label>
+                        <div class="cad-label-size-options" role="group" aria-label="문자 크기">
+                            <button type="button" class="active" data-cad-label-size="small" aria-pressed="true">작게</button>
+                            <button type="button" data-cad-label-size="medium" aria-pressed="false">중간</button>
+                            <button type="button" data-cad-label-size="large" aria-pressed="false">크게</button>
+                        </div>
+                    </div>
                     <div id="cadLayerList" class="cad-layer-list" aria-label="도면 레이어 목록"></div>
                     <p id="cadLayerMessage">호포차량기지 도면을 준비하고 있습니다.</p>
                 </aside>
@@ -206,7 +222,7 @@
     <script src="production-read.js?v=daily-measurement-cache-1"></script>
     <script src="notification-store.js?v=production-notifications-1"></script>
     <script src="auth.js?v=map-auth-config-1"></script>
-    <script src="map.js?v=hopo-cad-18"></script>
+    <script src="map.js?v=hopo-cad-naver-4"></script>
     <script src="script.js?v=xlsx-cache-1"></script>
 </body>
 

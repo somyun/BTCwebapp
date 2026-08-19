@@ -12,7 +12,8 @@ const styles = fs.readFileSync(path.join(root, 'style.css'), 'utf8');
 
 test('search button is the rightmost primary control and swaps to a cancellable search field', () => {
     const primary = html.slice(html.indexOf('id="mapPrimaryControls"'), html.indexOf('id="mapSearchPanel"'));
-    assert.ok(primary.indexOf('id="mapSearchBtn"') > primary.indexOf('id="detailZoomBtn"'));
+    assert.ok(primary.indexOf('id="mapSearchBtn"') > primary.indexOf('id="displaySettingsBtn"'));
+    assert.doesNotMatch(primary, /id="detailZoomBtn"/);
     assert.match(html, /id="mapSearchBtn"[^>]*aria-label="도면 문자 검색"/);
     assert.match(html, /id="mapSearchBackBtn"[^>]*>[\s\S]*?&lt;[\s\S]*?<\/button>/);
     assert.match(html, /id="mapSearchInput"[^>]*type="search"[^>]*placeholder="도면 문자 검색"/);
@@ -37,12 +38,29 @@ test('search indexes every CAD label and supports multiple matches', () => {
     assert.match(mapSource, /matches\.slice\(0, SEARCH_RESULT_LIMIT\)/);
 });
 
-test('selecting a result moves the map and displays a Kakao marker', () => {
-    assert.match(mapSource, /new window\.kakao\.maps\.Marker\(\{/);
+test('selecting a result moves the map and displays a NAVER marker', () => {
+    assert.match(mapSource, /new window\.naver\.maps\.Marker\(\{/);
     assert.match(mapSource, /position: \[Number\(position\[0\]\), Number\(position\[1\]\)\]/);
     assert.match(mapSource, /map\.panTo\(position\)/);
-    assert.match(mapSource, /if \(map\.getLevel\(\) > 2\) map\.setLevel\(2/);
-    assert.match(mapSource, /button\.addEventListener\('click', \(\) => selectSearchResult\(result\)\)/);
+    assert.match(mapSource, /if \(map\.getZoom\(\) < 20\) map\.setZoom\(20, true\)/);
+    assert.match(mapSource, /button\.addEventListener\('click', \(\) => selectSearchResult\(result, index\)\)/);
+    assert.match(mapSource, /content: SEARCH_MARKER_ICON/);
+    assert.match(styles, /\.cad-search-pin\s*{[\s\S]*?rotate\(var\(--map-counter-rotation, 0deg\)\)/);
+});
+
+test('selected search results can move to the previous or next match', () => {
+    assert.match(html, /id="mapSearchPrevBtn"[^>]*aria-label="이전 검색 결과"/);
+    assert.match(html, /id="mapSearchNextBtn"[^>]*aria-label="다음 검색 결과"/);
+    assert.match(html, /id="mapSearchNavigationText"[^>]*>검색텍스트</);
+    assert.match(html, /id="mapSearchNavigationLayer"[^>]*>레이어</);
+    assert.match(html, /id="mapSearchNavigationStatus"[^>]*>0\/0</);
+    assert.match(mapSource, /function moveSearchSelection\(offset\)/);
+    assert.match(mapSource, /moveSearchSelection\(-1\)/);
+    assert.match(mapSource, /moveSearchSelection\(1\)/);
+    assert.match(mapSource, /status\.textContent = `\$\{selectedSearchResultIndex \+ 1\}\/\$\{activeSearchResults\.length\}`/);
+    assert.match(mapSource, /text\.textContent = selectedResult\.text/);
+    assert.match(mapSource, /layer\.textContent = selectedResult\.layerName/);
+    assert.match(styles, /\.map-search-navigation button svg\s*{[\s\S]*?width: 30px;[\s\S]*?height: 30px;/);
 });
 
 test('search results are responsive and independently scrollable', () => {

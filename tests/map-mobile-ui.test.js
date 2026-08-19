@@ -15,6 +15,7 @@ test('map controls expose display settings and an icon-only location button', ()
     assert.doesNotMatch(html, /id="roadmapBtn"|id="skyviewBtn"|id="recenterMapBtn"/);
     assert.match(html, /id="displaySettingsBtn"[^>]*aria-controls="cadLayerPanel"/);
     assert.match(html, /id="currentLocationBtn"[^>]*class="map-current-location"/);
+    assert.match(html, /id="currentLocationBtn"[\s\S]*?title="현재위치"[\s\S]*?aria-pressed="false"/);
     assert.match(html, /class="location-dot"/);
     assert.match(html, /id="cadLayerPanel"[^>]*hidden/);
 });
@@ -45,18 +46,16 @@ test('mobile pinch updates the CAD canvas transform during the gesture', () => {
     assert.match(styles, /\.cad-map-overlay\.pinching\s*{[\s\S]*?transition: none;/);
 });
 
-test('additional zoom is limited to 2x beyond the Kakao tile limit and keeps controls fixed', () => {
+test('NAVER native zoom reaches level 21 without an additional zoom control', () => {
     assert.match(html, /id="mapZoomStage" class="map-zoom-stage"/);
-    assert.match(html, /id="detailZoomBtn"[^>]*aria-pressed="false"/);
     assert.match(html, /id="zoomInBtn"[^>]*aria-label="지도 확대"/);
     assert.match(html, /id="zoomOutBtn"[^>]*aria-label="지도 축소"/);
-    assert.match(html, /id="detailZoomBtn"[^>]*>추가확대<\/button>/);
-    assert.match(mapSource, /DETAIL_ZOOM_STEPS = \[1, 2\]/);
-    assert.doesNotMatch(mapSource, /DETAIL_ZOOM_STEPS = \[1, 2, 4, 8\]/);
-    assert.match(mapSource, /map\.setDraggable\(!dragLocked\)/);
+    assert.doesNotMatch(html, /id="detailZoomBtn"|추가확대/);
+    assert.match(mapSource, /NAVER_MAX_ZOOM = 21/);
+    assert.match(mapSource, /map\.setZoom\(Math\.min\(NAVER_MAX_ZOOM, map\.getZoom\(\) \+ 1\), true\)/);
+    assert.match(mapSource, /map\.setOptions\('draggable', !active\)/);
     assert.match(mapSource, /if \(customTransformActive\(\) && event\.touches\.length === 1\)/);
-    assert.match(mapSource, /if \(detailTransformActive\(\)\) \{[\s\S]*?mode: 'detail'/);
-    assert.doesNotMatch(mapSource, /if \(customTransformActive\(\)\) \{[\s\S]*?mode: 'detail'/);
+    assert.doesNotMatch(mapSource, /detailScale|DETAIL_ZOOM_STEPS|detailTransformActive/);
     assert.match(mapSource, /stage\.style\.transform = active/);
     assert.match(styles, /\.map-zoom-controls\s*{[\s\S]*?top: 50%;[\s\S]*?right: 12px;/);
 });
@@ -82,16 +81,39 @@ test('device orientation automatically rotates the map without an app button', (
     assert.match(styles, /\.map-view\.landscape-mode \.map-zoom-controls\s*{[\s\S]*?right: 12px;/);
 });
 
-test('CAD overlay keeps vector labels upright and visually stable in detail zoom', () => {
+test('CAD overlay keeps vector labels upright and stable at native zoom levels', () => {
     assert.match(html, /<svg id="cadOverlay"/);
     assert.match(mapSource, /createSvgElement\('path'/);
     assert.match(mapSource, /createSvgElement\('text'/);
     assert.match(mapSource, /class: 'cad-map-label'/);
     assert.match(mapSource, /transform: `rotate\(\$\{-mapRotationDegrees\} \$\{x\} \$\{y\}\)`/);
     assert.match(mapSource, /label\.setAttribute\('transform', `rotate\(\$\{-mapRotationDegrees\}/);
-    assert.match(mapSource, /map\.relayout\(\);[\s\S]*?map\.setCenter\(center\);/);
-    assert.match(mapSource, /LABEL_DETAIL_SCALE_COMPENSATION = 1\.2/);
-    assert.match(mapSource, /LABEL_DETAIL_SCALE_COMPENSATION \/ detailScale/);
+    assert.match(mapSource, /relayoutMap\(\);[\s\S]*?map\.setCenter\(center\);/);
+    assert.doesNotMatch(mapSource, /LABEL_DETAIL_SCALE_COMPENSATION|detailScale/);
     assert.match(mapSource, /'vector-effect': 'non-scaling-stroke'/);
-    assert.match(styles, /\.cad-map-label\s*{[\s\S]*?font-size: calc\(11px \* var\(--cad-label-inverse-scale\)\)/);
+    assert.match(styles, /\.cad-map-label\s*{[\s\S]*?font-size: var\(--cad-label-font-size, 14px\)/);
+});
+
+test('current location uses a circular marker and toggles real-time tracking', () => {
+    assert.match(mapSource, /navigator\.geolocation\.watchPosition\(updateTrackedPosition/);
+    assert.match(mapSource, /navigator\.geolocation\.clearWatch\(locationWatchId\)/);
+    assert.match(mapSource, /content: CURRENT_POSITION_ICON/);
+    assert.match(styles, /\.current-position-marker\s*{[\s\S]*?border-radius: 50%;[\s\S]*?background: #1677ff;/);
+    assert.match(styles, /\.map-current-location\.active\s*{/);
+});
+
+test('display settings offer small, medium, and large CAD label sizes', () => {
+    assert.match(html, /id="cadLabelToggle"[^>]*>[\s\S]*?<span>문자<\/span>/);
+    assert.doesNotMatch(html, /문자도 표시/);
+    assert.match(html, /data-cad-label-size="small"[^>]*>작게<\/button>/);
+    assert.match(html, /data-cad-label-size="medium"[^>]*>중간<\/button>/);
+    assert.match(html, /data-cad-label-size="large"[^>]*>크게<\/button>/);
+    assert.match(mapSource, /LABEL_FONT_SIZES = Object\.freeze\(\{ small: 14, medium: 17, large: 20 \}\)/);
+    assert.match(mapSource, /canvas\.style\.setProperty\('--cad-label-font-size', fontSize\)/);
+});
+
+test('CAD SVG uses NAVER OverlayView so native dragging moves map and drawing together', () => {
+    assert.match(mapSource, /class CadSvgOverlay extends window\.naver\.maps\.OverlayView/);
+    assert.match(mapSource, /this\.getPanes\(\)\.overlayLayer\.appendChild\(canvas\)/);
+    assert.match(mapSource, /cadOverlayView\.setMap\(map\)/);
 });

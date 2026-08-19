@@ -1,7 +1,9 @@
 (function () {
     'use strict';
 
-    const KAKAO_JAVASCRIPT_KEY = '708065ee6e872ac3f158928a61d3252e';
+    const NAVER_MAPS_KEY_META_NAME = 'naver-maps-ncp-key-id';
+    const NAVER_MIN_ZOOM = 0;
+    const NAVER_MAX_ZOOM = 21;
     const MAP_SCRIPT_BASE_URL = new URL(
         '.',
         document.currentScript?.src || window.location?.href || 'http://localhost/'
@@ -13,9 +15,10 @@
         'TEAM_A', 'TEAM_B', 'TEAM_C', 'TEAM_D'
     ]);
     const OVERLAY_PADDING_RATIO = 0.015;
-    const DETAIL_ZOOM_STEPS = [1, 2];
-    const LABEL_DETAIL_SCALE_COMPENSATION = 1.2;
     const SEARCH_RESULT_LIMIT = 100;
+    const LABEL_FONT_SIZES = Object.freeze({ small: 14, medium: 17, large: 20 });
+    const SEARCH_MARKER_ICON = '<span class="cad-search-pin" aria-hidden="true"><svg viewBox="0 0 30 38"><path d="M15 1.5C7.55 1.5 1.5 7.55 1.5 15c0 9.7 13.5 21.5 13.5 21.5S28.5 24.7 28.5 15C28.5 7.55 22.45 1.5 15 1.5Z"/><circle cx="15" cy="15" r="5.2"/></svg></span>';
+    const CURRENT_POSITION_ICON = '<span class="current-position-marker" aria-hidden="true"></span>';
 
     const layerCache = new Map();
     const selectedLayers = new Set();
@@ -26,6 +29,7 @@
     let manifestUrl = null;
     let map = null;
     let canvas = null;
+    let cadOverlayView = null;
     let controlsBound = false;
     let layerListBuilt = false;
     let initialSelectionApplied = false;
@@ -34,73 +38,43 @@
     let positionFrame = 0;
     let idleTimer = 0;
     let rasterDirty = true;
-    let renderedLevel = null;
+    let renderedZoom = null;
     let currentPositionMarker = null;
     let currentPositionAccuracy = null;
+    let locationWatchId = null;
+    let hasLocationFix = false;
     let pinchGesture = null;
     let pinchFinishTimer = 0;
-    let detailScale = 1;
-    let detailOffset = { x: 0, y: 0 };
     let mapRotationDegrees = 0;
-    let detailPanGesture = null;
-    let detailTransitionTimer = 0;
+    let transformedPanGesture = null;
     let mapInteractionState = '';
     let searchIndexPromise = null;
     let searchMarker = null;
     let searchDebounceTimer = 0;
     let searchRequestSerial = 0;
     let activeSearchResults = [];
+    let selectedSearchResultIndex = -1;
+    let currentLabelSize = 'small';
 
     function getElement(id) {
         return document.getElementById(id);
     }
 
-    function minimumMapLevel() {
-        return currentMapType === 'skyview' ? 0 : 1;
-    }
-
     function customTransformActive() {
-        return detailScale > 1.001 || mapRotationDegrees !== 0;
-    }
-
-    function detailTransformActive() {
-        return detailScale > 1.001;
-    }
-
-    function clampDetailOffset(scale = detailScale, offset = detailOffset) {
-        const view = getElement('mapView');
-        if (!view || scale <= 1) return { x: 0, y: 0 };
-        const maxX = ((scale - 1) * view.clientWidth) / 2;
-        const maxY = ((scale - 1) * view.clientHeight) / 2;
-        return {
-            x: Math.max(-maxX, Math.min(maxX, offset.x)),
-            y: Math.max(-maxY, Math.min(maxY, offset.y))
-        };
+        return mapRotationDegrees !== 0;
     }
 
     function updateZoomControls() {
-        const detailButton = getElement('detailZoomBtn');
-        const detailActive = detailScale > 1.001;
-        if (detailButton) {
-            const displayScale = Number.isInteger(detailScale)
-                ? detailScale.toFixed(0)
-                : detailScale.toFixed(1);
-            detailButton.textContent = detailActive ? `추가확대 ${displayScale}×` : '추가확대';
-            detailButton.classList.toggle('active', detailActive);
-            detailButton.setAttribute('aria-pressed', String(detailActive));
-        }
-
         const zoomInButton = getElement('zoomInBtn');
         const zoomOutButton = getElement('zoomOutBtn');
-        if (zoomInButton) zoomInButton.disabled = detailScale >= DETAIL_ZOOM_STEPS[DETAIL_ZOOM_STEPS.length - 1] - 0.001;
-        if (zoomOutButton) zoomOutButton.disabled = detailScale <= 1.001 && map?.getLevel() >= 14;
+        if (zoomInButton) zoomInButton.disabled = map?.getZoom() >= NAVER_MAX_ZOOM;
+        if (zoomOutButton) zoomOutButton.disabled = map?.getZoom() <= NAVER_MIN_ZOOM;
     }
 
-    function applyDetailTransform(animate = false) {
+    function applyMapTransform() {
         const stage = getElement('mapZoomStage');
         if (!stage) return;
 
-        const scale = detailScale;
         const view = getElement('mapView');
         if (view && mapRotationDegrees !== 0) {
             const width = Math.max(1, view.clientWidth);
@@ -119,84 +93,31 @@
             stage.style.right = '';
             stage.style.bottom = '';
         }
-        detailOffset = clampDetailOffset();
         const active = customTransformActive();
-        const detailActive = detailTransformActive();
-        stage.classList.toggle('detail-mode', detailActive);
-        stage.classList.toggle('detail-transition', animate);
+        stage.classList.toggle('map-rotation-active', active);
+        if (stage.style.setProperty) {
+            stage.style.setProperty('--map-counter-rotation', `${-mapRotationDegrees}deg`);
+        } else {
+            stage.style['--map-counter-rotation'] = `${-mapRotationDegrees}deg`;
+        }
         stage.style.transform = active
-            ? `translate3d(${detailOffset.x}px, ${detailOffset.y}px, 0) rotate(${mapRotationDegrees}deg) scale(${scale})`
+            ? `rotate(${mapRotationDegrees}deg)`
             : '';
 
-        if (canvas) {
-            const inverseScale = String(detailScale > 1.001
-                ? LABEL_DETAIL_SCALE_COMPENSATION / detailScale
-                : 1);
-            if (canvas.style.setProperty) {
-                canvas.style.setProperty('--cad-label-inverse-scale', inverseScale);
-            } else {
-                canvas.style['--cad-label-inverse-scale'] = inverseScale;
-            }
-        }
-
-        window.clearTimeout(detailTransitionTimer);
-        if (animate) {
-            detailTransitionTimer = window.setTimeout(() => {
-                stage.classList.remove('detail-transition');
-            }, 240);
-        }
-
-        const dragLocked = active;
-        const nextInteractionState = `${dragLocked}:${detailActive}`;
+        const nextInteractionState = String(active);
         if (map && nextInteractionState !== mapInteractionState) {
-            map.setDraggable(!dragLocked);
-            map.setZoomable(!detailActive);
+            map.setOptions('draggable', !active);
             mapInteractionState = nextInteractionState;
         }
         updateZoomControls();
     }
 
-    function setDetailScale(nextScale, anchor = null, animate = false) {
-        const view = getElement('mapView');
-        const oldScale = detailScale;
-        const boundedScale = Math.max(1, Math.min(DETAIL_ZOOM_STEPS[DETAIL_ZOOM_STEPS.length - 1], nextScale));
-
-        if (view && anchor && oldScale > 0) {
-            const rect = view.getBoundingClientRect();
-            const centerX = rect.left + (rect.width / 2);
-            const centerY = rect.top + (rect.height / 2);
-            const ratio = boundedScale / oldScale;
-            detailOffset = {
-                x: anchor.x - centerX - (ratio * (anchor.x - centerX - detailOffset.x)),
-                y: anchor.y - centerY - (ratio * (anchor.y - centerY - detailOffset.y))
-            };
-        }
-
-        detailScale = boundedScale;
-        if (detailScale <= 1.001) {
-            detailScale = 1;
-            detailOffset = { x: 0, y: 0 };
-        }
-        applyDetailTransform(animate);
-    }
-
-    function resetDetailZoom(animate = false) {
-        setDetailScale(1, null, animate);
-    }
-
-    function resetViewTransform(animate = false) {
-        detailScale = 1;
-        detailOffset = { x: 0, y: 0 };
-        applyDetailTransform(animate);
+    function resetViewTransform() {
+        applyMapTransform();
     }
 
     function screenDeltaToMapDelta(deltaX, deltaY) {
-        const scale = detailScale;
-        const delta = screenVectorToStageVector(deltaX, deltaY);
-        return {
-            x: delta.x / scale,
-            y: delta.y / scale
-        };
+        return screenVectorToStageVector(deltaX, deltaY);
     }
 
     function screenVectorToStageVector(deltaX, deltaY) {
@@ -271,7 +192,7 @@
         const rotationChanged = nextRotation !== mapRotationDegrees;
         mapRotationDegrees = nextRotation;
         if (rotationChanged) {
-            applyDetailTransform();
+            applyMapTransform();
             updateRenderedLabelRotations();
         }
     }
@@ -279,47 +200,23 @@
     function panTransformedMap(deltaX, deltaY) {
         if (!map || (!deltaX && !deltaY)) return;
         const projection = map.getProjection();
-        const centerPoint = projection.containerPointFromCoords(map.getCenter());
+        const centerPoint = projection.fromCoordToOffset(map.getCenter());
         const delta = screenDeltaToMapDelta(deltaX, deltaY);
-        const targetPoint = new window.kakao.maps.Point(
+        const targetPoint = new window.naver.maps.Point(
             centerPoint.x - delta.x,
             centerPoint.y - delta.y
         );
-        map.setCenter(projection.coordsFromContainerPoint(targetPoint));
-    }
-
-    function commitDetailOffsetToMap() {
-        if (Math.abs(detailOffset.x) < 0.01 && Math.abs(detailOffset.y) < 0.01) return;
-        const offset = { ...detailOffset };
-        detailOffset = { x: 0, y: 0 };
-        panTransformedMap(offset.x, offset.y);
-        applyDetailTransform();
-    }
-
-    function cycleDetailZoom() {
-        if (!map) return;
-        if (map.getLevel() !== minimumMapLevel()) map.setLevel(minimumMapLevel());
-        const next = detailScale < 1.5 ? 2 : 1;
-        setDetailScale(next, null, true);
+        map.setCenter(projection.fromOffsetToCoord(targetPoint));
     }
 
     function zoomIn() {
         if (!map) return;
-        const level = map.getLevel();
-        if (detailScale > 1.001 || level <= minimumMapLevel()) {
-            setDetailScale(2, null, true);
-            return;
-        }
-        map.setLevel(level - 1, { animate: true });
+        map.setZoom(Math.min(NAVER_MAX_ZOOM, map.getZoom() + 1), true);
     }
 
     function zoomOut() {
         if (!map) return;
-        if (detailScale > 1.001) {
-            setDetailScale(1, null, true);
-            return;
-        }
-        map.setLevel(Math.min(14, map.getLevel() + 1), { animate: true });
+        map.setZoom(Math.max(NAVER_MIN_ZOOM, map.getZoom() - 1), true);
     }
 
     function setLayerStatus(text, tone = 'ready') {
@@ -336,26 +233,39 @@
         message.classList.toggle('error', isError);
     }
 
-    function loadKakaoMapSdk() {
-        if (window.kakao && window.kakao.maps) {
-            return new Promise((resolve) => window.kakao.maps.load(resolve));
-        }
+    function naverMapsKeyId() {
+        return String(document.querySelector(`meta[name="${NAVER_MAPS_KEY_META_NAME}"]`)?.content || '').trim();
+    }
+
+    function loadNaverMapSdk() {
+        if (window.naver?.maps?.Map) return Promise.resolve();
 
         if (sdkPromise) return sdkPromise;
 
         sdkPromise = new Promise((resolve, reject) => {
+            const keyId = naverMapsKeyId();
+            if (!keyId || keyId === 'YOUR_NCP_KEY_ID') {
+                reject(new Error('네이버 지도 ncpKeyId를 index.html에 설정해 주세요.'));
+                return;
+            }
+
+            const previousAuthFailure = window.navermap_authFailure;
+            window.navermap_authFailure = () => {
+                previousAuthFailure?.();
+                reject(new Error('네이버 지도 인증에 실패했습니다. ncpKeyId와 Web 서비스 URL을 확인해 주세요.'));
+            };
             const script = document.createElement('script');
-            script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_JAVASCRIPT_KEY}&autoload=false`;
+            script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(keyId)}`;
             script.async = true;
             script.addEventListener('load', () => {
-                if (!window.kakao || !window.kakao.maps) {
-                    reject(new Error('카카오 지도 SDK를 시작하지 못했습니다.'));
+                if (!window.naver?.maps?.Map) {
+                    reject(new Error('네이버 지도 SDK를 시작하지 못했습니다.'));
                     return;
                 }
-                window.kakao.maps.load(resolve);
+                resolve();
             });
             script.addEventListener('error', () => {
-                reject(new Error('카카오 지도 SDK를 내려받지 못했습니다.'));
+                reject(new Error('네이버 지도 SDK를 내려받지 못했습니다.'));
             });
             document.head.appendChild(script);
         });
@@ -399,7 +309,10 @@
 
     function clearSearchResults() {
         activeSearchResults = [];
+        selectedSearchResultIndex = -1;
         getElement('mapSearchList')?.replaceChildren();
+        const navigation = getElement('mapSearchNavigation');
+        if (navigation) navigation.hidden = true;
     }
 
     function buildSearchIndex() {
@@ -451,21 +364,61 @@
         };
     }
 
-    function selectSearchResult(result) {
+    function updateSearchNavigation() {
+        const navigation = getElement('mapSearchNavigation');
+        const text = getElement('mapSearchNavigationText');
+        const layer = getElement('mapSearchNavigationLayer');
+        const status = getElement('mapSearchNavigationStatus');
+        const previous = getElement('mapSearchPrevBtn');
+        const next = getElement('mapSearchNextBtn');
+        const hasSelection = selectedSearchResultIndex >= 0 && activeSearchResults.length > 0;
+        if (navigation) navigation.hidden = !hasSelection;
+        if (!hasSelection) return;
+        const selectedResult = activeSearchResults[selectedSearchResultIndex];
+        if (text) {
+            text.textContent = selectedResult.text;
+            text.title = selectedResult.text;
+        }
+        if (layer) {
+            layer.textContent = selectedResult.layerName;
+            layer.title = selectedResult.layerName;
+        }
+        if (status) status.textContent = `${selectedSearchResultIndex + 1}/${activeSearchResults.length}`;
+        if (previous) previous.disabled = selectedSearchResultIndex === 0;
+        if (next) next.disabled = selectedSearchResultIndex === activeSearchResults.length - 1;
+    }
+
+    function selectSearchResult(result, resultIndex = activeSearchResults.indexOf(result)) {
         if (!map || !result) return;
-        resetViewTransform(true);
+        resetViewTransform();
+        selectedSearchResultIndex = Math.max(0, resultIndex);
         const [longitude, latitude] = result.position;
-        const position = new window.kakao.maps.LatLng(latitude, longitude);
+        const position = new window.naver.maps.LatLng(latitude, longitude);
         searchMarker?.setMap?.(null);
-        searchMarker = new window.kakao.maps.Marker({
+        searchMarker = new window.naver.maps.Marker({
             map,
             position,
-            title: result.text
+            title: result.text,
+            icon: {
+                content: SEARCH_MARKER_ICON,
+                anchor: new window.naver.maps.Point(15, 38)
+            }
         });
-        if (map.getLevel() > 2) map.setLevel(2, { animate: true });
+        if (map.getZoom() < 20) map.setZoom(20, true);
         map.panTo(position);
         getElement('mapSearchResults').hidden = true;
+        updateSearchNavigation();
         setLocationStatus(`검색 위치: ${result.text} · ${result.layerName}`, 'ready');
+    }
+
+    function moveSearchSelection(offset) {
+        if (!activeSearchResults.length || selectedSearchResultIndex < 0) return;
+        const nextIndex = Math.max(0, Math.min(
+            activeSearchResults.length - 1,
+            selectedSearchResultIndex + offset
+        ));
+        if (nextIndex === selectedSearchResultIndex) return;
+        selectSearchResult(activeSearchResults[nextIndex], nextIndex);
     }
 
     function renderSearchResults(resultSet) {
@@ -490,7 +443,7 @@
             meta.textContent = `${result.layerName} · ${index + 1}번째 결과`;
 
             button.append(title, meta);
-            button.addEventListener('click', () => selectSearchResult(result));
+            button.addEventListener('click', () => selectSearchResult(result, index));
             fragment.appendChild(button);
         }
         resultList.replaceChildren(fragment);
@@ -533,6 +486,9 @@
 
     function scheduleTextSearch() {
         activeSearchResults = [];
+        selectedSearchResultIndex = -1;
+        const navigation = getElement('mapSearchNavigation');
+        if (navigation) navigation.hidden = true;
         window.clearTimeout(searchDebounceTimer);
         searchDebounceTimer = window.setTimeout(performTextSearch, 140);
     }
@@ -587,8 +543,8 @@
         resetViewTransform();
         currentMapType = type === 'roadmap' ? 'roadmap' : 'skyview';
         map.setMapTypeId(currentMapType === 'skyview'
-            ? window.kakao.maps.MapTypeId.SKYVIEW
-            : window.kakao.maps.MapTypeId.ROADMAP);
+            ? window.naver.maps.MapTypeId.SATELLITE
+            : window.naver.maps.MapTypeId.NORMAL);
 
         const toggleButton = getElement('mapTypeToggleBtn');
         if (toggleButton) {
@@ -611,10 +567,11 @@
 
         resetViewTransform();
         const [west, south, east, north] = manifest.bounds_wgs84;
-        const bounds = new window.kakao.maps.LatLngBounds();
-        bounds.extend(new window.kakao.maps.LatLng(south, west));
-        bounds.extend(new window.kakao.maps.LatLng(north, east));
-        map.setBounds(bounds, 42, 42, 42, 42);
+        const bounds = new window.naver.maps.LatLngBounds(
+            new window.naver.maps.LatLng(south, west),
+            new window.naver.maps.LatLng(north, east)
+        );
+        map.fitBounds(bounds, 42);
     }
 
     function setLocationStatus(text, tone = '') {
@@ -638,66 +595,111 @@
         return '현재 위치를 가져오지 못했습니다.';
     }
 
-    function showCurrentPosition() {
+    function updateLocationTrackingButton(active) {
         const button = getElement('currentLocationBtn');
-        if (!map || !navigator.geolocation || !button) {
+        if (!button) return;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', String(active));
+        button.setAttribute('aria-label', active
+            ? '현재위치 실시간 추적 중지'
+            : '현재위치 실시간 추적 시작');
+    }
+
+    function stopLocationTracking(showStatus = true) {
+        if (locationWatchId !== null && navigator.geolocation?.clearWatch) {
+            navigator.geolocation.clearWatch(locationWatchId);
+        }
+        locationWatchId = null;
+        hasLocationFix = false;
+        updateLocationTrackingButton(false);
+        if (showStatus) setLocationStatus('현재위치 실시간 추적을 중지했습니다.', 'ready');
+    }
+
+    function updateTrackedPosition(position) {
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+        const accuracy = Math.max(1, position.coords.accuracy || 1);
+        const latLng = new window.naver.maps.LatLng(latitude, longitude);
+
+        if (!currentPositionAccuracy) {
+            currentPositionAccuracy = new window.naver.maps.Circle({
+                map,
+                center: latLng,
+                radius: accuracy,
+                strokeWeight: 1,
+                strokeColor: '#1677ff',
+                strokeOpacity: 0.75,
+                fillColor: '#1677ff',
+                fillOpacity: 0.14
+            });
+        } else {
+            currentPositionAccuracy.setMap(map);
+            currentPositionAccuracy.setCenter(latLng);
+            currentPositionAccuracy.setRadius(accuracy);
+        }
+
+        if (!currentPositionMarker) {
+            currentPositionMarker = new window.naver.maps.Marker({
+                map,
+                position: latLng,
+                title: '현재위치',
+                icon: {
+                    content: CURRENT_POSITION_ICON,
+                    anchor: new window.naver.maps.Point(12, 12)
+                }
+            });
+        } else {
+            currentPositionMarker.setMap(map);
+            currentPositionMarker.setPosition(latLng);
+        }
+
+        if (!hasLocationFix && map.getZoom() < 18) map.setZoom(18, true);
+        map.panTo(latLng);
+        hasLocationFix = true;
+        setLocationStatus(`현재위치 추적 중 · 정확도 약 ${Math.round(accuracy)}m`, 'ready');
+    }
+
+    function toggleLocationTracking() {
+        const button = getElement('currentLocationBtn');
+        if (!map || !navigator.geolocation?.watchPosition || !button) {
             setLocationStatus('이 브라우저에서는 현재 위치 기능을 사용할 수 없습니다.', 'error');
             return;
         }
 
+        if (locationWatchId !== null) {
+            stopLocationTracking();
+            return;
+        }
+
         resetViewTransform();
-        button.disabled = true;
-        button.setAttribute('aria-label', '현재 위치 확인 중');
-        setLocationStatus('현재 위치 권한을 확인하고 있습니다.', 'loading');
-
-        navigator.geolocation.getCurrentPosition((position) => {
-            const latitude = position.coords.latitude;
-            const longitude = position.coords.longitude;
-            const accuracy = Math.max(1, position.coords.accuracy || 1);
-            const latLng = new window.kakao.maps.LatLng(latitude, longitude);
-
-            if (!currentPositionAccuracy) {
-                currentPositionAccuracy = new window.kakao.maps.Circle({
-                    map,
-                    center: latLng,
-                    radius: accuracy,
-                    strokeWeight: 1,
-                    strokeColor: '#1677ff',
-                    strokeOpacity: 0.75,
-                    fillColor: '#1677ff',
-                    fillOpacity: 0.14
-                });
-            } else {
-                currentPositionAccuracy.setMap(map);
-                currentPositionAccuracy.setPosition(latLng);
-                currentPositionAccuracy.setRadius(accuracy);
-            }
-
-            if (!currentPositionMarker) {
-                currentPositionMarker = new window.kakao.maps.Marker({
-                    map,
-                    position: latLng,
-                    title: '현재 위치'
-                });
-            } else {
-                currentPositionMarker.setMap(map);
-                currentPositionMarker.setPosition(latLng);
-            }
-
-            map.setLevel(3);
-            map.panTo(latLng);
-            setLocationStatus(`현재 위치로 이동했습니다. 정확도 약 ${Math.round(accuracy)}m`, 'ready');
-            button.disabled = false;
-            button.setAttribute('aria-label', '현재 위치로 이동');
-        }, (error) => {
+        hasLocationFix = false;
+        updateLocationTrackingButton(true);
+        setLocationStatus('현재위치 권한을 확인하고 실시간 추적을 시작합니다.', 'loading');
+        locationWatchId = navigator.geolocation.watchPosition(updateTrackedPosition, (error) => {
+            stopLocationTracking(false);
             setLocationStatus(geolocationErrorMessage(error), 'error');
-            button.disabled = false;
-            button.setAttribute('aria-label', '현재 위치로 이동');
         }, {
             enableHighAccuracy: true,
-            timeout: 12000,
-            maximumAge: 15000
+            timeout: 15000,
+            maximumAge: 3000
         });
+    }
+
+    function setLabelSize(size) {
+        const normalizedSize = Object.hasOwn(LABEL_FONT_SIZES, size) ? size : 'small';
+        currentLabelSize = normalizedSize;
+        const fontSize = `${LABEL_FONT_SIZES[normalizedSize]}px`;
+        if (canvas?.style?.setProperty) {
+            canvas.style.setProperty('--cad-label-font-size', fontSize);
+        } else if (canvas?.style) {
+            canvas.style['--cad-label-font-size'] = fontSize;
+        }
+
+        for (const button of document.querySelectorAll('[data-cad-label-size]')) {
+            const active = button.dataset.cadLabelSize === normalizedSize;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-pressed', String(active));
+        }
     }
 
     function overlayGeoBounds() {
@@ -720,8 +722,8 @@
             [east, north],
             [east, south],
             [west, south]
-        ].map(([longitude, latitude]) => projection.containerPointFromCoords(
-            new window.kakao.maps.LatLng(latitude, longitude)
+        ].map(([longitude, latitude]) => projection.fromCoordToOffset(
+            new window.naver.maps.LatLng(latitude, longitude)
         ));
         const xs = corners.map((point) => point.x);
         const ys = corners.map((point) => point.y);
@@ -745,6 +747,27 @@
         canvas.style.top = `${box.top}px`;
         canvas.style.width = `${box.width}px`;
         canvas.style.height = `${box.height}px`;
+    }
+
+    function attachCadOverlayToMap() {
+        if (!map || !canvas || cadOverlayView) return;
+
+        class CadSvgOverlay extends window.naver.maps.OverlayView {
+            onAdd() {
+                this.getPanes().overlayLayer.appendChild(canvas);
+            }
+
+            draw() {
+                updateOverlayPosition();
+            }
+
+            onRemove() {
+                canvas.remove();
+            }
+        }
+
+        cadOverlayView = new CadSvgOverlay();
+        cadOverlayView.setMap(map);
     }
 
     function queuePositionUpdate() {
@@ -772,7 +795,7 @@
 
         if (customTransformActive() && event.touches.length === 1) {
             const touch = event.touches[0];
-            detailPanGesture = {
+            transformedPanGesture = {
                 x: touch.clientX,
                 y: touch.clientY
             };
@@ -786,22 +809,10 @@
         const midpoint = touchMidpoint(first, second);
 
         window.clearTimeout(pinchFinishTimer);
-        detailPanGesture = null;
-        if (detailTransformActive()) {
-            pinchGesture = {
-                mode: 'detail',
-                distance: Math.max(1, touchDistance(first, second)),
-                midpoint,
-                scale: detailScale,
-                offset: { ...detailOffset }
-            };
-            getElement('mapZoomStage')?.classList.add('dragging');
-            return;
-        }
+        transformedPanGesture = null;
 
         const canvasMidpoint = screenPointToCanvasPoint(midpoint);
         pinchGesture = {
-            mode: 'map',
             distance: Math.max(1, touchDistance(first, second)),
             midpoint,
             stageMidpoint: screenPointToStagePoint(midpoint)
@@ -813,14 +824,14 @@
     }
 
     function updatePinch(event) {
-        if (detailPanGesture && event.touches.length === 1 && customTransformActive()) {
+        if (transformedPanGesture && event.touches.length === 1 && customTransformActive()) {
             const touch = event.touches[0];
             panTransformedMap(
-                touch.clientX - detailPanGesture.x,
-                touch.clientY - detailPanGesture.y
+                touch.clientX - transformedPanGesture.x,
+                touch.clientY - transformedPanGesture.y
             );
-            detailPanGesture.x = touch.clientX;
-            detailPanGesture.y = touch.clientY;
+            transformedPanGesture.x = touch.clientX;
+            transformedPanGesture.y = touch.clientY;
             return;
         }
 
@@ -829,22 +840,6 @@
         const second = event.touches[1];
         const midpoint = touchMidpoint(first, second);
         const distanceRatio = touchDistance(first, second) / pinchGesture.distance;
-
-        if (pinchGesture.mode === 'detail') {
-            detailScale = Math.max(1, Math.min(DETAIL_ZOOM_STEPS[DETAIL_ZOOM_STEPS.length - 1], pinchGesture.scale * distanceRatio));
-            const viewRect = getElement('mapView')?.getBoundingClientRect();
-            if (viewRect) {
-                const centerX = viewRect.left + (viewRect.width / 2);
-                const centerY = viewRect.top + (viewRect.height / 2);
-                const ratio = detailScale / pinchGesture.scale;
-                detailOffset = {
-                    x: midpoint.x - centerX - (ratio * (pinchGesture.midpoint.x - centerX - pinchGesture.offset.x)),
-                    y: midpoint.y - centerY - (ratio * (pinchGesture.midpoint.y - centerY - pinchGesture.offset.y))
-                };
-            }
-            applyDetailTransform();
-            return;
-        }
 
         const scale = Math.max(0.25, Math.min(4, distanceRatio));
         const stageMidpoint = screenPointToStagePoint(midpoint);
@@ -863,40 +858,23 @@
     }
 
     function endPinch(event) {
-        if (detailPanGesture && event.touches.length === 0) {
-            detailPanGesture = null;
+        if (transformedPanGesture && event.touches.length === 0) {
+            transformedPanGesture = null;
             getElement('mapZoomStage')?.classList.remove('dragging');
         }
         if (!pinchGesture || event.touches.length >= 2) return;
 
-        if (pinchGesture.mode === 'detail') {
-            pinchGesture = null;
-            if (event.touches.length === 1) {
-                const touch = event.touches[0];
-                detailPanGesture = {
-                    x: touch.clientX,
-                    y: touch.clientY
-                };
-            } else {
-                getElement('mapZoomStage')?.classList.remove('dragging');
-            }
-            commitDetailOffsetToMap();
-            if (detailScale < 1.15) resetDetailZoom(true);
-            else applyDetailTransform();
-            return;
-        }
-
         pinchGesture = null;
         window.clearTimeout(pinchFinishTimer);
-        // Give Kakao Maps a moment to commit the new projection, then hand control
+        // Give NAVER Maps a moment to commit the new projection, then hand control
         // back quickly so a remaining finger can continue panning without lag.
         pinchFinishTimer = window.setTimeout(clearPinchTransform, 80);
     }
 
-    function beginDetailPointerPan(event) {
+    function beginTransformedPointerPan(event) {
         if (!customTransformActive() || event.pointerType === 'touch' || event.button !== 0) return;
         const stage = getElement('mapZoomStage');
-        detailPanGesture = {
+        transformedPanGesture = {
             pointerId: event.pointerId,
             x: event.clientX,
             y: event.clientY
@@ -906,28 +884,21 @@
         event.preventDefault();
     }
 
-    function updateDetailPointerPan(event) {
-        if (!detailPanGesture || detailPanGesture.pointerId !== event.pointerId) return;
+    function updateTransformedPointerPan(event) {
+        if (!transformedPanGesture || transformedPanGesture.pointerId !== event.pointerId) return;
         panTransformedMap(
-            event.clientX - detailPanGesture.x,
-            event.clientY - detailPanGesture.y
+            event.clientX - transformedPanGesture.x,
+            event.clientY - transformedPanGesture.y
         );
-        detailPanGesture.x = event.clientX;
-        detailPanGesture.y = event.clientY;
+        transformedPanGesture.x = event.clientX;
+        transformedPanGesture.y = event.clientY;
         event.preventDefault();
     }
 
-    function endDetailPointerPan(event) {
-        if (!detailPanGesture || detailPanGesture.pointerId !== event.pointerId) return;
-        detailPanGesture = null;
+    function endTransformedPointerPan(event) {
+        if (!transformedPanGesture || transformedPanGesture.pointerId !== event.pointerId) return;
+        transformedPanGesture = null;
         getElement('mapZoomStage')?.classList.remove('dragging');
-    }
-
-    function detailWheelZoom(event) {
-        if (!detailTransformActive()) return;
-        event.preventDefault();
-        const factor = Math.exp(-event.deltaY * 0.0015);
-        setDetailScale(detailScale * factor, { x: event.clientX, y: event.clientY });
     }
 
     function displayColor(color) {
@@ -957,8 +928,8 @@
 
         const projection = map.getProjection();
         const toPixel = ([longitude, latitude]) => {
-            const point = projection.containerPointFromCoords(
-                new window.kakao.maps.LatLng(latitude, longitude)
+            const point = projection.fromCoordToOffset(
+                new window.naver.maps.LatLng(latitude, longitude)
             );
             return [
                 point.x - box.left,
@@ -1023,7 +994,7 @@
 
         canvas.replaceChildren(fragment);
         rasterDirty = false;
-        renderedLevel = map.getLevel();
+        renderedZoom = map.getZoom();
     }
 
     function updateSelectedStatus() {
@@ -1119,7 +1090,7 @@
         window.clearTimeout(idleTimer);
         idleTimer = window.setTimeout(async () => {
             canvas?.classList.remove('zooming');
-            if (rasterDirty || renderedLevel !== map.getLevel()) {
+            if (rasterDirty || renderedZoom !== map.getZoom()) {
                 await renderRaster(true);
             } else {
                 updateOverlayPosition();
@@ -1133,11 +1104,18 @@
         updateZoomControls();
     }
 
+    function relayoutMap() {
+        if (!map) return;
+        const surface = getElement('naverMap');
+        const width = Math.max(1, surface?.clientWidth || 1);
+        const height = Math.max(1, surface?.clientHeight || 1);
+        map.setSize(new window.naver.maps.Size(width, height));
+    }
+
     function bindControls() {
         if (controlsBound) return;
         getElement('mapTypeToggleBtn')?.addEventListener('click', toggleMapType);
-        getElement('currentLocationBtn')?.addEventListener('click', showCurrentPosition);
-        getElement('detailZoomBtn')?.addEventListener('click', cycleDetailZoom);
+        getElement('currentLocationBtn')?.addEventListener('click', toggleLocationTracking);
         getElement('zoomInBtn')?.addEventListener('click', zoomIn);
         getElement('zoomOutBtn')?.addEventListener('click', zoomOut);
         getElement('mapSearchBtn')?.addEventListener('click', openTextSearch);
@@ -1148,9 +1126,11 @@
                 closeTextSearch();
             } else if (event.key === 'Enter' && activeSearchResults.length === 1) {
                 event.preventDefault();
-                selectSearchResult(activeSearchResults[0]);
+                selectSearchResult(activeSearchResults[0], 0);
             }
         });
+        getElement('mapSearchPrevBtn')?.addEventListener('click', () => moveSearchSelection(-1));
+        getElement('mapSearchNextBtn')?.addEventListener('click', () => moveSearchSelection(1));
         getElement('displaySettingsBtn')?.addEventListener('click', () => {
             const panel = getElement('cadLayerPanel');
             const button = getElement('displaySettingsBtn');
@@ -1178,6 +1158,9 @@
             rasterDirty = true;
             await renderRaster();
         });
+        for (const button of document.querySelectorAll('[data-cad-label-size]')) {
+            button.addEventListener('click', () => setLabelSize(button.dataset.cadLabelSize));
+        }
         getElement('cadOpacity')?.addEventListener('input', (event) => {
             if (canvas) canvas.style.opacity = String(Number(event.target.value) / 100);
         });
@@ -1185,11 +1168,10 @@
             if (!map) return;
             syncOrientationFromDevice();
             const center = map.getCenter();
-            map.relayout();
+            relayoutMap();
             map.setCenter(center);
-            window.kakao.maps.event.trigger(map, 'resize');
             updateOverlayPosition();
-            applyDetailTransform();
+            applyMapTransform();
             await renderRaster(true);
         });
         window.screen?.orientation?.addEventListener?.('change', () => {
@@ -1197,9 +1179,8 @@
                 syncOrientationFromDevice();
                 if (!map) return;
                 const center = map.getCenter();
-                map.relayout();
+                relayoutMap();
                 map.setCenter(center);
-                window.kakao.maps.event.trigger(map, 'resize');
                 updateOverlayPosition();
                 await renderRaster(true);
             }, 0);
@@ -1208,15 +1189,15 @@
     }
 
     function bindMapEvents() {
-        window.kakao.maps.event.addListener(map, 'zoom_start', onZoomStart);
-        window.kakao.maps.event.addListener(map, 'zoom_changed', onMapZoomChanged);
-        window.kakao.maps.event.addListener(map, 'center_changed', queuePositionUpdate);
-        window.kakao.maps.event.addListener(map, 'bounds_changed', queuePositionUpdate);
-        window.kakao.maps.event.addListener(map, 'dragstart', () => canvas?.classList.remove('zooming'));
-        window.kakao.maps.event.addListener(map, 'drag', queuePositionUpdate);
-        window.kakao.maps.event.addListener(map, 'idle', onMapIdle);
+        window.naver.maps.Event.addListener(map, 'zooming', onZoomStart);
+        window.naver.maps.Event.addListener(map, 'zoom_changed', onMapZoomChanged);
+        window.naver.maps.Event.addListener(map, 'center_changed', queuePositionUpdate);
+        window.naver.maps.Event.addListener(map, 'bounds_changed', queuePositionUpdate);
+        window.naver.maps.Event.addListener(map, 'dragstart', () => canvas?.classList.remove('zooming'));
+        window.naver.maps.Event.addListener(map, 'drag', queuePositionUpdate);
+        window.naver.maps.Event.addListener(map, 'idle', onMapIdle);
 
-        const mapSurface = getElement('kakaoMap');
+        const mapSurface = getElement('naverMap');
         const touchOptions = { passive: true, capture: true };
         mapSurface?.addEventListener('touchstart', beginPinch, touchOptions);
         mapSurface?.addEventListener('touchmove', updatePinch, touchOptions);
@@ -1224,35 +1205,43 @@
         mapSurface?.addEventListener('touchcancel', endPinch, touchOptions);
 
         const stage = getElement('mapZoomStage');
-        stage?.addEventListener('pointerdown', beginDetailPointerPan);
-        stage?.addEventListener('pointermove', updateDetailPointerPan);
-        stage?.addEventListener('pointerup', endDetailPointerPan);
-        stage?.addEventListener('pointercancel', endDetailPointerPan);
-        stage?.addEventListener('wheel', detailWheelZoom, { passive: false });
+        stage?.addEventListener('pointerdown', beginTransformedPointerPan);
+        stage?.addEventListener('pointermove', updateTransformedPointerPan);
+        stage?.addEventListener('pointerup', endTransformedPointerPan);
+        stage?.addEventListener('pointercancel', endTransformedPointerPan);
     }
 
     async function initialize() {
         const loading = getElement('mapLoading');
 
         try {
-            const results = await Promise.all([loadKakaoMapSdk(), loadManifest()]);
+            const results = await Promise.all([loadNaverMapSdk(), loadManifest()]);
             manifest = results[1];
             canvas = getElement('cadOverlay');
             syncOrientationFromDevice();
             if (!canvas) throw new Error('도면 표시 화면을 준비하지 못했습니다.');
+            setLabelSize(currentLabelSize);
 
             if (!map) {
                 const [longitude, latitude] = manifest.center_wgs84;
-                map = new window.kakao.maps.Map(getElement('kakaoMap'), {
-                    center: new window.kakao.maps.LatLng(latitude, longitude),
-                    level: 4
+                map = new window.naver.maps.Map(getElement('naverMap'), {
+                    center: new window.naver.maps.LatLng(latitude, longitude),
+                    zoom: 17,
+                    minZoom: NAVER_MIN_ZOOM,
+                    maxZoom: NAVER_MAX_ZOOM,
+                    mapTypeId: window.naver.maps.MapTypeId.SATELLITE,
+                    mapTypeControl: false,
+                    scaleControl: true,
+                    zoomControl: false
                 });
                 bindMapEvents();
             }
 
+            attachCadOverlayToMap();
+
             buildLayerList();
             bindControls();
-            map.relayout();
+            relayoutMap();
             setMapType(currentMapType);
 
             if (!initialBoundsApplied) {
@@ -1272,7 +1261,7 @@
             canvas.style.opacity = String(Number(getElement('cadOpacity')?.value || 80) / 100);
             loading?.classList.add('hidden');
         } catch (error) {
-            console.error('Kakao CAD map initialization failed:', error);
+            console.error('NAVER CAD map initialization failed:', error);
             setLayerStatus('오류', 'error');
             setLayerMessage(error.message, true);
             if (loading) {
@@ -1286,7 +1275,7 @@
         initialize,
         relayout() {
             if (!map) return;
-            map.relayout();
+            relayoutMap();
             queuePositionUpdate();
         }
     };
