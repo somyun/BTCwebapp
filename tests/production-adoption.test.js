@@ -58,7 +58,7 @@ test('legacy notification devices can be imported and silently claimed by the sa
 
 test('production cache versions force the notification migration code and worker to refresh', () => {
     assert.match(read('index.html'), /production-read\.js\?v=daily-measurement-cache-1/);
-    assert.match(read('index.html'), /script\.js\?v=xlsx-cache-1/);
+    assert.match(read('index.html'), /script\.js\?v=map-history-1/);
     assert.match(read('notification-settings.html'), /notification-settings\.js\?v=production-notifications-2/);
     assert.match(read('script.js'), /firebase-messaging-sw\.js\?v=production-notifications-2/);
 });
@@ -96,7 +96,7 @@ test('dynamic form header controls use CSP-safe event listeners', () => {
 test('the header hamburger overrides global full-width button styles', () => {
     const index = read('index.html');
     const style = read('style.css');
-    assert.match(index, /style\.css\?v=production-adoption-3/);
+    assert.match(index, /style\.css\?v=production-adoption-4/);
     assert.match(style, /\.hamburger-menu\s*\{[\s\S]*?width:\s*38px;[\s\S]*?height:\s*38px;[\s\S]*?margin:\s*0;[\s\S]*?background:\s*transparent;/);
     assert.match(style, /\.hamburger-menu:hover\s*\{[\s\S]*?background:\s*#f0f0f0;/);
 });
@@ -120,7 +120,7 @@ test('test-only environment values do not leak into adopted production code', ()
 
 test('the existing public CAD loader remains in place without private Storage adoption', () => {
     const index = read('index.html');
-    assert.match(index, /<script src="map\.js\?v=hopo-cad-naver-4"><\/script>/);
+    assert.match(index, /<script src="map\.js\?v=hopo-cad-naver-5"><\/script>/);
     assert.doesNotMatch(index, /cad-storage\.js|firebasestorage\.googleapis\.com|storage\.googleapis\.com/);
 });
 

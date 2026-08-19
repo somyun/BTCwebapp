@@ -79,6 +79,15 @@ function markCurrentDocumentVersion() {
     window.history.replaceState(window.history.state, '', url);
 }
 
+function preventBrowserPinchZoom(event) {
+    if (event.touches && event.touches.length < 2) return;
+    event.preventDefault();
+}
+
+for (const eventName of ['gesturestart', 'gesturechange', 'gestureend', 'touchmove']) {
+    document.addEventListener(eventName, preventBrowserPinchZoom, { passive: false });
+}
+
 removeLegacyNotificationElements();
 markCurrentDocumentVersion();
 window.addEventListener('pageshow', () => {
@@ -191,6 +200,7 @@ async function openMapView() {
 
     closeMenu();
     updateHomeButtonVisibility();
+    pushMapStateToHistory();
     window.BWAMap?.initialize();
 }
 
@@ -230,6 +240,10 @@ window.onload = function () {
     addHomeStateToHistory();
 
     window.addEventListener('popstate', () => {
+        if (isMapViewActive) {
+            closeMapView();
+            return;
+        }
         // 뒤로가기 시 홈 화면으로 복귀
         const formSelect = document.getElementById('formSelect');
         if (formSelect) formSelect.value = '';
@@ -1382,7 +1396,8 @@ function initializeFavorites() {
     if (homeBtn) {
         homeBtn.addEventListener('click', function () {
             if (isMapViewActive) {
-                closeMapView();
+                if (window.history.state?.page === 'map') window.history.back();
+                else closeMapView();
                 return;
             }
             document.getElementById('formSelect').value = '';
@@ -1590,6 +1605,12 @@ function addHomeStateToHistory() {
     const url = new URL(window.location.href);
     url.searchParams.set('page', 'home');
     window.history.pushState({ page: 'home' }, 'Home', url);
+}
+
+function pushMapStateToHistory() {
+    const url = new URL(window.location.href);
+    url.searchParams.set('page', 'map');
+    window.history.pushState({ page: 'map' }, 'Map', url);
 }
 
 // --- 로컬 스토리지 관련 헬퍼함수 추가 ---

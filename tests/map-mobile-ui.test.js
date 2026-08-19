@@ -8,6 +8,7 @@ const test = require('node:test');
 const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const mapSource = fs.readFileSync(path.join(root, 'map.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(root, 'script.js'), 'utf8');
 const styles = fs.readFileSync(path.join(root, 'style.css'), 'utf8');
 
 test('map controls expose display settings and an icon-only location button', () => {
@@ -79,6 +80,8 @@ test('device orientation automatically rotates the map without an app button', (
     assert.doesNotMatch(styles, /\.map-orientation-button/);
     assert.match(styles, /\.map-view\.landscape-mode \.map-type-controls\s*{[\s\S]*?right: auto;[\s\S]*?left: 12px;/);
     assert.match(styles, /\.map-view\.landscape-mode \.map-zoom-controls\s*{[\s\S]*?right: 12px;/);
+    assert.match(mapSource, /function scheduleResponsiveRelayout\(\)[\s\S]*?window\.requestAnimationFrame\([\s\S]*?window\.requestAnimationFrame/);
+    assert.match(mapSource, /new window\.ResizeObserver\(scheduleResponsiveRelayout\)\.observe\(getElement\('mapView'\)\)/);
 });
 
 test('CAD overlay keeps vector labels upright and stable at native zoom levels', () => {
@@ -94,12 +97,34 @@ test('CAD overlay keeps vector labels upright and stable at native zoom levels',
     assert.match(styles, /\.cad-map-label\s*{[\s\S]*?font-size: var\(--cad-label-font-size, 14px\)/);
 });
 
+test('browser page zoom is disabled while map pinch remains app-controlled', () => {
+    assert.match(html, /maximum-scale=1\.0, user-scalable=no/);
+    assert.match(styles, /\.map-view\s*{[\s\S]*?touch-action: none;[\s\S]*?overscroll-behavior: none;/);
+    assert.match(appSource, /function preventBrowserPinchZoom\(event\)/);
+    assert.match(appSource, /\['gesturestart', 'gesturechange', 'gestureend', 'touchmove'\]/);
+});
+
+test('map view owns a history entry so browser back returns to home', () => {
+    assert.match(appSource, /pushMapStateToHistory\(\);[\s\S]*?window\.BWAMap\?\.initialize\(\)/);
+    assert.match(appSource, /window\.addEventListener\('popstate',[\s\S]*?if \(isMapViewActive\)[\s\S]*?closeMapView\(\);[\s\S]*?return;/);
+    assert.match(appSource, /window\.history\.pushState\(\{ page: 'map' \}, 'Map', url\)/);
+});
+
 test('current location uses a circular marker and toggles real-time tracking', () => {
     assert.match(mapSource, /navigator\.geolocation\.watchPosition\(updateTrackedPosition/);
     assert.match(mapSource, /navigator\.geolocation\.clearWatch\(locationWatchId\)/);
     assert.match(mapSource, /content: CURRENT_POSITION_ICON/);
     assert.match(styles, /\.current-position-marker\s*{[\s\S]*?border-radius: 50%;[\s\S]*?background: #1677ff;/);
     assert.match(styles, /\.map-current-location\.active\s*{/);
+    assert.match(mapSource, /if \(!hasLocationFix\) \{[\s\S]*?map\.panTo\(latLng\);[\s\S]*?\}/);
+    assert.doesNotMatch(mapSource, /\}\s*map\.panTo\(latLng\);\s*hasLocationFix = true/);
+});
+
+test('zoom rendering commits only the latest stable projection', () => {
+    assert.match(mapSource, /const requestSerial = \+\+renderRequestSerial/);
+    assert.match(mapSource, /revision !== renderRevision \|\| zoom !== map\.getZoom\(\)/);
+    assert.ok(mapSource.indexOf("canvas.setAttribute('viewBox'") > mapSource.indexOf('revision !== renderRevision'));
+    assert.doesNotMatch(styles, /\.cad-map-overlay\.zooming/);
 });
 
 test('display settings offer small, medium, and large CAD label sizes', () => {

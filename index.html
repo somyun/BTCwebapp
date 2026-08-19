@@ -4,12 +4,12 @@
 <head>
     <meta charset="utf-8">
     <title>ERP 점검 웹앱</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <!-- NAVER Cloud Platform > Maps > Dynamic Map의 ncpKeyId를 입력하고 운영 Web 서비스 URL을 등록하세요. -->
     <meta name="naver-maps-ncp-key-id" content="147egmm9a5">
     <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; connect-src https://script.google.com https://script.googleusercontent.com https://*.googleusercontent.com https://firestore.googleapis.com https://asia-northeast3-btcwebapp-551bd.cloudfunctions.net https://firebaseinstallations.googleapis.com https://fcmregistrations.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://oapi.map.naver.com https://*.pstatic.net; img-src 'self' data: https://*.pstatic.net; style-src 'self' 'unsafe-inline'; script-src 'self' https://www.gstatic.com https://cdnjs.cloudflare.com https://oapi.map.naver.com https://*.pstatic.net; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'">
-    <link rel="stylesheet" href="style.css?v=production-adoption-3">
+    <link rel="stylesheet" href="style.css?v=production-adoption-4">
     <link rel="prefetch" href="./notifications.html?v=production-notifications-3" as="document">
     <link rel="prefetch" href="./notification-settings.html?v=production-notifications-3" as="document">
     <link rel="prefetch" href="./notifications.css?v=production-notifications-1" as="style">
@@ -130,13 +130,14 @@
                         <div id="mapSearchList" class="map-search-list"></div>
                     </section>
                     <div id="mapSearchNavigation" class="map-search-navigation" aria-label="검색 결과 이동" hidden>
-                        <span id="mapSearchNavigationText" class="map-search-navigation-text">검색텍스트</span>
+                        <button id="mapSearchNavigationText" class="map-search-navigation-text" type="button"
+                            title="검색 결과 목록 다시 보기">검색텍스트</button>
                         <span id="mapSearchNavigationLayer" class="map-search-navigation-layer">레이어</span>
                         <span id="mapSearchNavigationStatus" class="map-search-navigation-count" aria-live="polite">0/0</span>
-                        <button id="mapSearchPrevBtn" type="button" aria-label="이전 검색 결과">
+                        <button id="mapSearchPrevBtn" class="map-search-navigation-arrow" type="button" aria-label="이전 검색 결과">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 15 7-7 7 7"></path></svg>
                         </button>
-                        <button id="mapSearchNextBtn" type="button" aria-label="다음 검색 결과">
+                        <button id="mapSearchNextBtn" class="map-search-navigation-arrow" type="button" aria-label="다음 검색 결과">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 9 7 7 7-7"></path></svg>
                         </button>
                     </div>
@@ -222,8 +223,8 @@
     <script src="production-read.js?v=daily-measurement-cache-1"></script>
     <script src="notification-store.js?v=production-notifications-1"></script>
     <script src="auth.js?v=map-auth-config-1"></script>
-    <script src="map.js?v=hopo-cad-naver-4"></script>
-    <script src="script.js?v=xlsx-cache-1"></script>
+    <script src="map.js?v=hopo-cad-naver-5"></script>
+    <script src="script.js?v=map-history-1"></script>
 </body>
 
 </html>

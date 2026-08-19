@@ -39,6 +39,9 @@
     let idleTimer = 0;
     let rasterDirty = true;
     let renderedZoom = null;
+    let renderRevision = 0;
+    let renderRequestSerial = 0;
+    let relayoutFrame = 0;
     let currentPositionMarker = null;
     let currentPositionAccuracy = null;
     let locationWatchId = null;
@@ -388,6 +391,14 @@
         if (next) next.disabled = selectedSearchResultIndex === activeSearchResults.length - 1;
     }
 
+    function reopenSearchResults() {
+        if (!activeSearchResults.length) return;
+        const results = getElement('mapSearchResults');
+        const navigation = getElement('mapSearchNavigation');
+        if (results) results.hidden = false;
+        if (navigation) navigation.hidden = true;
+    }
+
     function selectSearchResult(result, resultIndex = activeSearchResults.indexOf(result)) {
         if (!map || !result) return;
         resetViewTransform();
@@ -408,7 +419,6 @@
         map.panTo(position);
         getElement('mapSearchResults').hidden = true;
         updateSearchNavigation();
-        setLocationStatus(`검색 위치: ${result.text} · ${result.layerName}`, 'ready');
     }
 
     function moveSearchSelection(offset) {
@@ -653,8 +663,10 @@
             currentPositionMarker.setPosition(latLng);
         }
 
-        if (!hasLocationFix && map.getZoom() < 18) map.setZoom(18, true);
-        map.panTo(latLng);
+        if (!hasLocationFix) {
+            if (map.getZoom() < 18) map.setZoom(18, true);
+            map.panTo(latLng);
+        }
         hasLocationFix = true;
         setLocationStatus(`현재위치 추적 중 · 정확도 약 ${Math.round(accuracy)}m`, 'ready');
     }
@@ -920,11 +932,12 @@
     async function renderRaster(force = false) {
         if (!map || !manifest || !canvas || (!rasterDirty && !force)) return;
 
+        const requestSerial = ++renderRequestSerial;
+        const revision = renderRevision;
+        const zoom = map.getZoom();
         const box = overlayScreenBox();
-        updateOverlayPosition();
         const width = Math.max(1, box.width);
         const height = Math.max(1, box.height);
-        canvas.setAttribute('viewBox', `0 0 ${width} ${height}`);
 
         const projection = map.getProjection();
         const toPixel = ([longitude, latitude]) => {
@@ -992,9 +1005,20 @@
             }
         }
 
+        if (requestSerial !== renderRequestSerial) return;
+        if (revision !== renderRevision || zoom !== map.getZoom()) {
+            rasterDirty = true;
+            return;
+        }
+
+        canvas.style.left = `${box.left}px`;
+        canvas.style.top = `${box.top}px`;
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+        canvas.setAttribute('viewBox', `0 0 ${width} ${height}`);
         canvas.replaceChildren(fragment);
         rasterDirty = false;
-        renderedZoom = map.getZoom();
+        renderedZoom = zoom;
     }
 
     function updateSelectedStatus() {
@@ -1080,7 +1104,8 @@
 
     function onZoomStart() {
         window.clearTimeout(idleTimer);
-        if (!canvas?.classList.contains('pinching')) canvas?.classList.add('zooming');
+        renderRevision += 1;
+        rasterDirty = true;
         queuePositionUpdate();
     }
 
@@ -1089,7 +1114,6 @@
         queuePositionUpdate();
         window.clearTimeout(idleTimer);
         idleTimer = window.setTimeout(async () => {
-            canvas?.classList.remove('zooming');
             if (rasterDirty || renderedZoom !== map.getZoom()) {
                 await renderRaster(true);
             } else {
@@ -1100,6 +1124,8 @@
     }
 
     function onMapZoomChanged() {
+        renderRevision += 1;
+        rasterDirty = true;
         queuePositionUpdate();
         updateZoomControls();
     }
@@ -1110,6 +1136,27 @@
         const width = Math.max(1, surface?.clientWidth || 1);
         const height = Math.max(1, surface?.clientHeight || 1);
         map.setSize(new window.naver.maps.Size(width, height));
+    }
+
+    function scheduleResponsiveRelayout() {
+        syncOrientationFromDevice();
+        applyMapTransform();
+        if (!map) return;
+        if (relayoutFrame) window.cancelAnimationFrame?.(relayoutFrame);
+        relayoutFrame = window.requestAnimationFrame(() => {
+            relayoutFrame = window.requestAnimationFrame(async () => {
+                relayoutFrame = 0;
+                syncOrientationFromDevice();
+                applyMapTransform();
+                const center = map.getCenter();
+                relayoutMap();
+                map.setCenter(center);
+                renderRevision += 1;
+                rasterDirty = true;
+                updateOverlayPosition();
+                await renderRaster(true);
+            });
+        });
     }
 
     function bindControls() {
@@ -1131,6 +1178,7 @@
         });
         getElement('mapSearchPrevBtn')?.addEventListener('click', () => moveSearchSelection(-1));
         getElement('mapSearchNextBtn')?.addEventListener('click', () => moveSearchSelection(1));
+        getElement('mapSearchNavigationText')?.addEventListener('click', reopenSearchResults);
         getElement('displaySettingsBtn')?.addEventListener('click', () => {
             const panel = getElement('cadLayerPanel');
             const button = getElement('displaySettingsBtn');
@@ -1164,27 +1212,13 @@
         getElement('cadOpacity')?.addEventListener('input', (event) => {
             if (canvas) canvas.style.opacity = String(Number(event.target.value) / 100);
         });
-        window.addEventListener('resize', async () => {
-            if (!map) return;
-            syncOrientationFromDevice();
-            const center = map.getCenter();
-            relayoutMap();
-            map.setCenter(center);
-            updateOverlayPosition();
-            applyMapTransform();
-            await renderRaster(true);
-        });
+        window.addEventListener('resize', scheduleResponsiveRelayout);
         window.screen?.orientation?.addEventListener?.('change', () => {
-            window.setTimeout(async () => {
-                syncOrientationFromDevice();
-                if (!map) return;
-                const center = map.getCenter();
-                relayoutMap();
-                map.setCenter(center);
-                updateOverlayPosition();
-                await renderRaster(true);
-            }, 0);
+            window.setTimeout(scheduleResponsiveRelayout, 0);
         });
+        if (window.ResizeObserver) {
+            new window.ResizeObserver(scheduleResponsiveRelayout).observe(getElement('mapView'));
+        }
         controlsBound = true;
     }
 
@@ -1275,8 +1309,7 @@
         initialize,
         relayout() {
             if (!map) return;
-            relayoutMap();
-            queuePositionUpdate();
+            scheduleResponsiveRelayout();
         }
     };
 }());

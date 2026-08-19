@@ -51,7 +51,7 @@ test('selecting a result moves the map and displays a NAVER marker', () => {
 test('selected search results can move to the previous or next match', () => {
     assert.match(html, /id="mapSearchPrevBtn"[^>]*aria-label="이전 검색 결과"/);
     assert.match(html, /id="mapSearchNextBtn"[^>]*aria-label="다음 검색 결과"/);
-    assert.match(html, /id="mapSearchNavigationText"[^>]*>검색텍스트</);
+    assert.match(html, /id="mapSearchNavigationText"[^>]*title="검색 결과 목록 다시 보기"[^>]*>검색텍스트</);
     assert.match(html, /id="mapSearchNavigationLayer"[^>]*>레이어</);
     assert.match(html, /id="mapSearchNavigationStatus"[^>]*>0\/0</);
     assert.match(mapSource, /function moveSearchSelection\(offset\)/);
@@ -60,7 +60,10 @@ test('selected search results can move to the previous or next match', () => {
     assert.match(mapSource, /status\.textContent = `\$\{selectedSearchResultIndex \+ 1\}\/\$\{activeSearchResults\.length\}`/);
     assert.match(mapSource, /text\.textContent = selectedResult\.text/);
     assert.match(mapSource, /layer\.textContent = selectedResult\.layerName/);
-    assert.match(styles, /\.map-search-navigation button svg\s*{[\s\S]*?width: 30px;[\s\S]*?height: 30px;/);
+    assert.match(mapSource, /function reopenSearchResults\(\)/);
+    assert.match(mapSource, /getElement\('mapSearchNavigationText'\)\?\.addEventListener\('click', reopenSearchResults\)/);
+    assert.doesNotMatch(mapSource, /setLocationStatus\(`검색 위치:/);
+    assert.match(styles, /\.map-search-navigation-arrow svg\s*{[\s\S]*?width: 30px;[\s\S]*?height: 30px;/);
 });
 
 test('search results are responsive and independently scrollable', () => {
