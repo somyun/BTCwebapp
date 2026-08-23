@@ -25,6 +25,7 @@ const { createSheetsGateway } = require("./lib/sheets-sync");
 const { createSynchronizer } = require("./lib/synchronizer");
 const { createLegacyNotificationMigrator } = require("./lib/legacy-notification-migration");
 const { createXlsxCacheService } = require("./lib/xlsx-cache");
+const { createFormPublishQueue } = require("./lib/form-publish-jobs");
 
 const REGION = "asia-northeast3";
 const PUBLISHER_ADMIN_TOKEN = defineSecret("BWA_PUBLISHER_TOKEN");
@@ -122,12 +123,26 @@ async function getSynchronizer() {
         serverTimestamp: () => FieldValue.serverTimestamp(),
         sheetsGateway: createSheetsGateway({ authClient }),
         publisher: getPublisher(),
+        formPublishQueue: getFormPublishQueue(),
         xlsxCache: getXlsxCacheService(),
         logger
       });
     })();
   }
   return synchronizerPromise;
+}
+
+let formPublishQueue;
+function getFormPublishQueue() {
+  if (!formPublishQueue) {
+    formPublishQueue = createFormPublishQueue({
+      firestore: getFirestoreClient(),
+      publisher: getPublisher(),
+      serverTimestamp: () => FieldValue.serverTimestamp(),
+      logger
+    });
+  }
+  return formPublishQueue;
 }
 
 let xlsxCacheService;
@@ -266,10 +281,19 @@ exports.publishForm = manualPublisher((publisher, body) =>
 exports.publishAllChangedForms = manualPublisher((publisher, body) =>
   publisher.publishAllChangedForms({ force: Boolean(body.force) }));
 
+exports.enqueueFormPublish = manualAdmin((body) => getFormPublishQueue().enqueue({
+  sheetName: body.sheetName,
+  revision: body.revision,
+  eventId: body.eventId,
+  source: body.source || "gas",
+  force: body.force === true
+}));
+
 exports.publishAllChangedFormsScheduled = onSchedule({
-  schedule: "every 5 minutes",
+  schedule: "15 3 * * *",
   timeZone: "Asia/Seoul",
-  retryCount: 0
+  retryCount: 3,
+  labels: { "bwa-release": "event-form-publish-v1" }
 }, async () => {
   await getPublisher().publishAllChangedForms();
 });
@@ -346,6 +370,15 @@ exports.syncMeasurementSubmission = onDocumentCreated({
   const synchronizer = await getSynchronizer();
   return synchronizer.syncSubmission(submissionId, event.id, { throwRetryable: true });
 });
+
+exports.processFormPublishJob = onDocumentCreated({
+  document: "formPublishJobs/{jobId}",
+  retry: true,
+  maxInstances: 1,
+  concurrency: 1,
+  timeoutSeconds: 300,
+  labels: { "bwa-release": "event-form-publish-v1" }
+}, async (event) => getFormPublishQueue().process(event.params.jobId));
 
 exports.prepareXlsxExportJob = onDocumentCreated({
   document: "xlsxExportJobs/{jobId}",

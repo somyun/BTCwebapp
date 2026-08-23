@@ -113,6 +113,25 @@ function normalizeFormList(payload) {
   };
 }
 
+function buildFormListDocument(items) {
+  const normalizedItems = [...items];
+  const sourceRevision = normalizedItems.length
+    ? normalizedItems.map((item) => item.lastModifiedDate).sort().at(-1)
+    : new Date(0).toISOString();
+  const contentHash = hashCanonical({
+    schemaVersion: SCHEMA_VERSION,
+    sourceRevision,
+    items: normalizedItems
+  });
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    sourceRevision,
+    contentHash,
+    itemCount: normalizedItems.length,
+    items: normalizedItems
+  };
+}
+
 function normalizeValidation(validation) {
   if (validation === null || validation === undefined) return null;
   if (typeof validation !== "object") throw new Error("INVALID_VALIDATION");
@@ -212,21 +231,6 @@ function buildStoragePlan(formDocument) {
   };
 }
 
-async function mapWithConcurrency(values, limit, mapper) {
-  const results = new Array(values.length);
-  let nextIndex = 0;
-  async function worker() {
-    while (nextIndex < values.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      results[index] = await mapper(values[index], index);
-    }
-  }
-  const workers = Array.from({ length: Math.min(limit, values.length) }, () => worker());
-  await Promise.all(workers);
-  return results;
-}
-
 function seoulDateKey(value) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return null;
@@ -279,6 +283,41 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
       .map((document) => document.ref.delete()));
   }
 
+  async function writeImmutableChunks(rootRef, plan) {
+    if (plan.root.storageMode !== "chunked") return plan.root;
+    const revisionId = plan.root.contentHash;
+    const revisionRef = rootRef.collection("revisions").doc(revisionId);
+    await Promise.all(plan.chunks.map((chunk) => {
+      const chunkId = String(chunk.index).padStart(4, "0");
+      return revisionRef.collection("chunks").doc(chunkId).set(chunk);
+    }));
+    await revisionRef.set({
+      schemaVersion: SCHEMA_VERSION,
+      formKey: plan.root.formKey,
+      contentHash: plan.root.contentHash,
+      chunkCount: plan.root.chunkCount,
+      rowCount: plan.root.rowCount,
+      createdAt: serverTimestamp()
+    });
+    return { ...plan.root, activeRevisionId: revisionId };
+  }
+
+  function mergePublishedFormIntoList(sourceFormList, existingList, publishedItem) {
+    const existingItems = Array.isArray(existingList?.items) ? existingList.items : [];
+    const itemsByKey = new Map(existingItems.map((item) => [item.formKey, item]));
+    itemsByKey.set(publishedItem.formKey, publishedItem);
+    const ordered = [];
+    for (const sourceItem of sourceFormList.items) {
+      const item = itemsByKey.get(sourceItem.formKey);
+      if (item) {
+        ordered.push(item);
+        itemsByKey.delete(sourceItem.formKey);
+      }
+    }
+    ordered.push(...itemsByKey.values());
+    return buildFormListDocument(ordered);
+  }
+
   async function persistFormList(formList, force = false) {
     const reference = firestore.collection("publicCache").doc("formList");
     const existing = await reference.get();
@@ -319,14 +358,8 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
     }
 
     const plan = buildStoragePlan(formDocument);
-    const keepChunkIds = new Set();
-    for (const chunk of plan.chunks) {
-      const chunkId = String(chunk.index).padStart(4, "0");
-      keepChunkIds.add(chunkId);
-      await rootRef.collection("chunks").doc(chunkId).set(chunk);
-    }
-    await rootRef.set({ ...plan.root, publishedAt: serverTimestamp() });
-    await deleteChunks(rootRef, keepChunkIds);
+    const root = await writeImmutableChunks(rootRef, plan);
+    await rootRef.set({ ...root, publishedAt: serverTimestamp() });
 
     return {
       formKey: formDocument.formKey,
@@ -351,6 +384,65 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
     if (!formListItem) throw new Error("FORM_NOT_FOUND_IN_PRODUCTION_FORM_LIST");
     const payload = await fetchGasJson("getFormDataForWeb", { sheetName: requestedSheetName });
     return persistForm(buildFormDocument(formListItem, payload), force);
+  }
+
+  async function publishFormAndList({ sheetName, force = false, sourceFormList = null } = {}) {
+    const requestedSheetName = requireNonEmptyString(sheetName, "sheetName");
+    const currentSourceFormList = sourceFormList || await readSourceFormList();
+    const formListItem = currentSourceFormList.items.find((item) => item.sheetName === requestedSheetName);
+    if (!formListItem) throw new Error("FORM_NOT_FOUND_IN_PRODUCTION_FORM_LIST");
+    const payload = await fetchGasJson("getFormDataForWeb", { sheetName: requestedSheetName });
+    const formDocument = buildFormDocument(formListItem, payload);
+    const rootRef = firestore.collection("publicForms").doc(formDocument.formKey);
+    const listRef = firestore.collection("publicCache").doc("formList");
+    const plan = buildStoragePlan(formDocument);
+    const root = await writeImmutableChunks(rootRef, plan);
+
+    return firestore.runTransaction(async (transaction) => {
+      const existingForm = await transaction.get(rootRef);
+      const existingList = await transaction.get(listRef);
+      if (existingForm.exists && isOlderRevision(formDocument.sourceRevision, existingForm.get("sourceRevision"))) {
+        return {
+          form: {
+            formKey: formDocument.formKey,
+            sheetName: formDocument.sheetName,
+            status: "stale_skipped",
+            rowCount: existingForm.get("rowCount"),
+            contentHash: existingForm.get("contentHash")
+          },
+          list: { status: "unchanged" }
+        };
+      }
+
+      const formChanged = force || !existingForm.exists ||
+        existingForm.get("contentHash") !== formDocument.contentHash;
+      const mergedList = mergePublishedFormIntoList(
+        currentSourceFormList,
+        existingList.exists ? existingList.data() : null,
+        formListItem
+      );
+      const listChanged = force || !existingList.exists ||
+        existingList.get("contentHash") !== mergedList.contentHash;
+      if (formChanged) transaction.set(rootRef, { ...root, publishedAt: serverTimestamp() });
+      if (listChanged) transaction.set(listRef, { ...mergedList, publishedAt: serverTimestamp() });
+
+      return {
+        form: {
+          formKey: formDocument.formKey,
+          sheetName: formDocument.sheetName,
+          status: formChanged ? "published" : "unchanged",
+          storageMode: formChanged ? plan.root.storageMode : existingForm.get("storageMode"),
+          chunkCount: formChanged ? plan.root.chunkCount : existingForm.get("chunkCount"),
+          rowCount: formDocument.rowCount,
+          contentHash: formDocument.contentHash
+        },
+        list: {
+          status: listChanged ? "published" : "unchanged",
+          contentHash: mergedList.contentHash,
+          itemCount: mergedList.itemCount
+        }
+      };
+    });
   }
 
   async function publishDailyMeasurementCache({ formDocument, rows, measurements, sourceRevision }) {
@@ -423,6 +515,11 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
     const orphans = snapshot.docs.filter((document) => !validFormKeys.has(document.id));
     for (const orphan of orphans) {
       await deleteChunks(orphan.ref);
+      const revisions = await orphan.ref.collection("revisions").get();
+      for (const revision of revisions.docs) {
+        await deleteChunks(revision.ref);
+        await revision.ref.delete();
+      }
       await orphan.ref.delete();
     }
     return orphans.length;
@@ -441,10 +538,31 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
   async function publishAllChangedForms({ force = false } = {}) {
     const startedAt = Date.now();
     const formList = await readSourceFormList();
-    const forms = await mapWithConcurrency(formList.items, 2, async (formListItem) => {
-      const payload = await fetchGasJson("getFormDataForWeb", { sheetName: formListItem.sheetName });
-      return persistForm(buildFormDocument(formListItem, payload), force);
-    });
+    const forms = [];
+    const failures = [];
+    for (const formListItem of formList.items) {
+      try {
+        const published = await publishFormAndList({
+          sheetName: formListItem.sheetName,
+          force,
+          sourceFormList: formList
+        });
+        forms.push(published.form);
+      } catch (error) {
+        failures.push({
+          sheetName: formListItem.sheetName,
+          errorCode: String(error?.message || "FORM_PUBLISH_FAILED").slice(0, 200)
+        });
+      }
+    }
+    if (failures.length) {
+      logger.error("Firestore cache reconciliation partially failed", {
+        succeededCount: forms.length,
+        failures,
+        durationMs: Date.now() - startedAt
+      });
+      throw new Error(`FORM_PUBLISH_BATCH_FAILED:${failures.map((failure) => failure.sheetName).join(",")}`);
+    }
     const list = await persistFormList(formList, force);
     const removedOrphanCount = await deleteOrphanedForms(new Set(formList.items.map((item) => item.formKey)));
     const result = {
@@ -465,6 +583,7 @@ function createPublisher({ firestore, fetchImpl = globalThis.fetch, serverTimest
   return {
     publishFormList,
     publishForm,
+    publishFormAndList,
     publishAllChangedForms,
     publishDailyMeasurementCache,
     deleteExpiredDailyMeasurementCaches

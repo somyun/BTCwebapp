@@ -18,6 +18,7 @@ function createSynchronizer({
   serverTimestamp,
   sheetsGateway,
   publisher,
+  formPublishQueue = null,
   xlsxCache = null,
   now = () => new Date(),
   logger = console
@@ -94,10 +95,29 @@ function createSynchronizer({
         measurements: submission.measurements,
         revision: submission.acceptedAt
       });
+      let formPublishJob = null;
+      if (formPublishQueue) {
+        try {
+          formPublishJob = await formPublishQueue.enqueue({
+            sheetName: submission.sheetName,
+            revision: submission.acceptedAt,
+            eventId: submissionId,
+            source: "measurement-submission"
+          });
+        } catch (publishQueueError) {
+          logger.error("Form publish job registration failed after Sheets sync", {
+            submissionId,
+            sheetName: submission.sheetName,
+            errorCode: errorCode(publishQueueError)
+          });
+        }
+      }
       await submissionRef.update({
         status: "synced",
         sourceRevisionAfterSync: submission.acceptedAt,
         updatedCellCount: sheetResult.updatedCellCount,
+        formPublishStatus: formPublishJob ? "queued" : "queue_failed",
+        formPublishJobId: formPublishJob?.jobId || null,
         ...(xlsxCache ? { xlsxStatus: "preparing", xlsxErrorCode: null } : {}),
         retryable: false,
         errorCode: null,

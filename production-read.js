@@ -111,14 +111,21 @@
         if (document.storageMode === 'inline') {
             rows = document.rows;
         } else if (document.storageMode === 'chunked') {
+            const chunkPath = document.activeRevisionId
+                ? ['publicForms', formListItem.formKey, 'revisions', document.activeRevisionId, 'chunks']
+                : ['publicForms', formListItem.formKey, 'chunks'];
             const payload = await fetchJson(firestoreUrl(
-                ['publicForms', formListItem.formKey, 'chunks'],
+                chunkPath,
                 { pageSize: 1000 }
             ));
             const chunks = (payload.documents || [])
                 .map((entry) => adapter.decodeFirestoreFields(entry.fields || {}))
                 .sort((left, right) => left.index - right.index);
             if (chunks.length !== document.chunkCount) throw new Error('FIRESTORE_CHUNK_COUNT_MISMATCH');
+            if (chunks.some((chunk) => chunk.formKey !== document.formKey ||
+                chunk.contentHash !== document.contentHash)) {
+                throw new Error('FIRESTORE_CHUNK_REVISION_MISMATCH');
+            }
             rows = chunks.flatMap((chunk) => chunk.rows);
         } else {
             throw new Error('INVALID_FIRESTORE_STORAGE_MODE');

@@ -11,6 +11,7 @@ const GLOBAL_TARGET_SPREADSHEET_ID = '19rgzRnTQtOwwW7Ts5NbBuItNey94dAZsEnO7Tk0cm
 const FOLDER_ID = '1p0iXXAWa6iwmj2nUuHm_PntlaV9CgQ7w'; // 업로드할 폴더
 const TARGET_SPREADSHEET_ID = '19rgzRnTQtOwwW7Ts5NbBuItNey94dAZsEnO7Tk0cm6s'; // ERP점검웹앱 파일 ID
 const FORM_LIST_SHEET_NAME = 'FormList'; // 양식 목록을 저장할 시트 이름
+const FIREBASE_FORM_PUBLISH_URL = 'https://asia-northeast3-btcwebapp-551bd.cloudfunctions.net/enqueueFormPublish';
 
 /**
  * GET 요청을 처리합니다 (데이터 조회용)
@@ -139,6 +140,48 @@ function createCorsResponse(data) {
     // .setHeader('Access-Control-Allow-Origin', '*'); // Apps Script `ContentService`에는 setHeader 없음
     // Apps Script 웹앱은 기본적으로 리다이렉트를 통해 CORS를 어느정도 허용하지만,
     // fetch 모드시 redirect: 'follow'가 필요함.
+}
+
+/**
+ * Firestore에는 작업만 등록하고 실제 GAS 조회/캐시 발행은 Firebase 트리거가 처리합니다.
+ * BWA_PUBLISHER_TOKEN은 Apps Script의 스크립트 속성에 배포 시 설정해야 합니다.
+ */
+function enqueueFirebaseFormPublish(sheetName, revision, source) {
+    const token = PropertiesService.getScriptProperties().getProperty('BWA_PUBLISHER_TOKEN');
+    if (!token) {
+        console.error('BWA_PUBLISHER_TOKEN 스크립트 속성이 설정되지 않았습니다.');
+        return { queued: false, error: 'FIREBASE_PUBLISH_TOKEN_NOT_CONFIGURED' };
+    }
+    const payload = {
+        sheetName: sheetName,
+        revision: revision,
+        source: source || 'gas',
+        eventId: Utilities.getUuid()
+    };
+    let lastError = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            const response = UrlFetchApp.fetch(FIREBASE_FORM_PUBLISH_URL, {
+                method: 'post',
+                contentType: 'application/json',
+                headers: { 'x-bwa-publisher-token': token },
+                payload: JSON.stringify(payload),
+                muteHttpExceptions: true
+            });
+            const status = response.getResponseCode();
+            const body = JSON.parse(response.getContentText() || '{}');
+            if (status >= 200 && status < 300 && body.ok === true) {
+                return { queued: true, jobId: body.result.jobId, created: body.result.created };
+            }
+            lastError = new Error(`FIREBASE_PUBLISH_HTTP_${status}`);
+        } catch (error) {
+            lastError = error;
+        }
+        if (attempt < 3) Utilities.sleep(attempt * 250);
+    }
+    const errorCode = String(lastError && lastError.message || 'FIREBASE_PUBLISH_ENQUEUE_FAILED');
+    console.error(`Firebase 양식 발행 작업 등록 실패: ${errorCode}`);
+    return { queued: false, error: errorCode };
 }
 
 // -----------------------------------------------------------------------
@@ -290,7 +333,8 @@ function uploadFileBase64(fileData, userChoice) {
 
         DriveApp.getFileById(tempFileId).setTrashed(true);
 
-        recordUploadedForm(newSheetName, TARGET_SPREADSHEET_ID);
+        const revision = recordUploadedForm(newSheetName, TARGET_SPREADSHEET_ID);
+        const cachePublish = enqueueFirebaseFormPublish(newSheetName, revision, 'gas-upload');
         const formData = getFormDataForWeb(newSheetName);
 
         return {
@@ -298,7 +342,9 @@ function uploadFileBase64(fileData, userChoice) {
             message: `파일이 성공적으로 업로드 및 변환되었습니다: ${fileData.name}`,
             formData: formData,
             spreadsheetId: TARGET_SPREADSHEET_ID,
-            sheetName: newSheetName
+            sheetName: newSheetName,
+            revision: revision,
+            cachePublish: cachePublish
         };
 
     } catch (error) {
@@ -326,15 +372,15 @@ function recordUploadedForm(sheetName, spreadsheetId) {
         }
 
         const now = new Date();
-        const formattedDate = Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
-
         if (foundRowIndex !== -1) {
-            formListSheet.getRange(foundRowIndex, 3).setValue(formattedDate);
+            formListSheet.getRange(foundRowIndex, 3).setValue(now);
         } else {
-            formListSheet.appendRow([sheetName, spreadsheetId, formattedDate]);
+            formListSheet.appendRow([sheetName, spreadsheetId, now]);
         }
+        return now.toISOString();
     } catch (error) {
         console.error(error);
+        throw error;
     }
 }
 
@@ -523,9 +569,15 @@ function saveMeasurementsToSheet(spreadsheetId, sheetName, measurements) {
             .setNumberFormat('@')
             .setValues(valuesToUpdate);
 
-        recordUploadedForm(sheetName, TARGET_SPREADSHEET_ID);
+        const revision = recordUploadedForm(sheetName, TARGET_SPREADSHEET_ID);
+        const cachePublish = enqueueFirebaseFormPublish(sheetName, revision, 'gas-measurement-save');
 
-        return { success: true, message: `측정값이 시트에 성공적으로 저장되었습니다.` };
+        return {
+            success: true,
+            message: `측정값이 시트에 성공적으로 저장되었습니다.`,
+            revision: revision,
+            cachePublish: cachePublish
+        };
 
     } catch (error) {
         return { success: false, message: `오류 발생: ${error.message}` };

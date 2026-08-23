@@ -4,6 +4,11 @@ This directory contains the production Firestore cache publisher, asynchronous
 measurement submission pipeline, and notification backend for project
 `btcwebapp-551bd` in `asia-northeast3`.
 
+Form cache publishing is event-driven. Controlled GAS uploads and measurement
+writes enqueue `formPublishJobs`; a Firestore create trigger publishes only the
+affected form. The scheduled publisher runs once per day at 03:15 Asia/Seoul as
+a recovery reconciliation, not as the primary update path.
+
 ## Safety boundaries
 
 - Every Function refuses to use a project other than `btcwebapp-551bd`.
@@ -28,6 +33,9 @@ legacy GAS notification trigger is disabled.
 - Enable Google Sheets API.
 - Grant the Functions service account edit access to the production spreadsheet.
 - Create `BWA_PUBLISHER_TOKEN` for administrator endpoints.
+- Set the same `BWA_PUBLISHER_TOKEN` value in the Apps Script project's Script
+  Properties. GAS uses it only to enqueue a form publish job through the
+  protected `enqueueFormPublish` endpoint.
 - Create `HUMETRO_ID` and `HUMETRO_PW` in Secret Manager. Scheduled collection
   logs in to Humetro directly; credentials never enter Firestore or browser code.
 - Import active legacy rows from the `FCM_Tokens` sheet with the protected admin
@@ -40,6 +48,7 @@ From `firebase-production/functions`:
 
 ```powershell
 npm.cmd run lint
+npm.cmd test
 ```
 
 ## Deployment
@@ -47,6 +56,12 @@ npm.cmd run lint
 Always pass the production project explicitly. Deployment and gate changes are
 separate operations so code can be verified while writes and scheduled dispatch
 remain blocked.
+
+Roll out the compatible browser reader (`production-read.js` and `index.html`)
+first. Then deploy Firestore Rules and Functions, and finally deploy the updated
+Apps Script after setting its `BWA_PUBLISHER_TOKEN` Script Property. This order
+keeps existing legacy chunks readable until clients understand revision-scoped
+chunks.
 
 ```powershell
 firebase deploy --only "firestore:rules,firestore:indexes,functions" `

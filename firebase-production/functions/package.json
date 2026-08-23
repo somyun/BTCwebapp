@@ -8,7 +8,8 @@
     "node": "22"
   },
   "scripts": {
-    "lint": "node --check index.js && node --check lib/publisher.js && node --check lib/submission.js && node --check lib/notification-service.js && node --check lib/humetro-client.js && node --check lib/legacy-notification-migration.js && node --check lib/sheets-sync.js && node --check lib/synchronizer.js && node --check lib/xlsx-cache.js"
+    "lint": "node --check index.js && node --check lib/publisher.js && node --check lib/submission.js && node --check lib/notification-service.js && node --check lib/humetro-client.js && node --check lib/legacy-notification-migration.js && node --check lib/sheets-sync.js && node --check lib/synchronizer.js && node --check lib/xlsx-cache.js && node --check lib/form-publish-jobs.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "firebase-admin": "14.2.0",

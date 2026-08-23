@@ -15,6 +15,16 @@ service cloud.firestore {
         allow read: if true;
         allow write: if false;
       }
+
+      match /revisions/{revisionId} {
+        allow read: if true;
+        allow write: if false;
+
+        match /chunks/{chunkId} {
+          allow read: if true;
+          allow write: if false;
+        }
+      }
     }
 
     // The web app reads only the document keyed for today's Seoul date.
@@ -33,6 +43,10 @@ service cloud.firestore {
     }
 
     match /submissionRateLimits/{documentId} {
+      allow read, write: if false;
+    }
+
+    match /formPublishJobs/{jobId} {
       allow read, write: if false;
     }
 
