@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ko">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>네이버 네이티브 마커 줌 테스트</title>
+    <style>
+        html,
+        body,
+        #map {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .zoom-controls {
+            position: fixed;
+            z-index: 1000;
+            right: 16px;
+            top: 50%;
+            display: grid;
+            grid-template-rows: 52px 36px 52px;
+            width: 52px;
+            overflow: hidden;
+            border: 1px solid rgba(0, 0, 0, 0.25);
+            border-radius: 10px;
+            background: #fff;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+            transform: translateY(-50%);
+        }
+
+        .zoom-controls button {
+            padding: 0;
+            border: 0;
+            background: #fff;
+            color: #111;
+            font: 700 28px/1 Arial, sans-serif;
+            cursor: pointer;
+        }
+
+        .zoom-controls button:disabled {
+            color: #aaa;
+        }
+
+        #zoomLevel {
+            display: grid;
+            place-items: center;
+            border-top: 1px solid #ddd;
+            border-bottom: 1px solid #ddd;
+            color: #333;
+            font: 600 14px/1 Arial, sans-serif;
+        }
+    </style>
+    <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=147egmm9a5"></script>
+</head>
+
+<body>
+    <div id="map" aria-label="네이버 지도 네이티브 마커 줌 테스트"></div>
+    <div class="zoom-controls" aria-label="줌 애니메이션 테스트">
+        <button id="zoomIn" type="button" aria-label="애니메이션 확대">+</button>
+        <output id="zoomLevel" aria-label="현재 줌 레벨">17</output>
+        <button id="zoomOut" type="button" aria-label="애니메이션 축소">−</button>
+    </div>
+    <script>
+        const MIN_ZOOM = 5;
+        const MAX_ZOOM = 21;
+        const center = new naver.maps.LatLng(35.2846659, 129.0183832);
+
+        const map = new naver.maps.Map('map', {
+            center,
+            zoom: 17,
+            minZoom: MIN_ZOOM,
+            maxZoom: MAX_ZOOM,
+            mapTypeId: naver.maps.MapTypeId.SATELLITE,
+            mapTypeControl: false,
+            scaleControl: false,
+            zoomControl: false,
+            overlayZoomEffect: 'all'
+        });
+
+        const marker = new naver.maps.Marker({
+            map,
+            position: center
+        });
+
+        function SvgOverlay(position) {
+            this.position = position;
+            this.element = document.createElement('div');
+            this.element.className = 'diagnostic-svg-overlay';
+            this.element.setAttribute('aria-label', 'SVG 도형 오버레이');
+            this.element.style.cssText = 'position:absolute;width:54px;height:54px;pointer-events:none;';
+            this.element.innerHTML = `
+                <svg viewBox="0 0 54 54" width="54" height="54" aria-hidden="true">
+                    <rect x="4" y="4" width="46" height="46" rx="6"
+                        fill="rgba(255,235,59,.3)" stroke="#ff1744" stroke-width="4" />
+                    <path d="M11 27h32M27 11v32" stroke="#ff1744" stroke-width="3" />
+                </svg>`;
+        }
+
+        SvgOverlay.prototype = new naver.maps.OverlayView();
+        SvgOverlay.prototype.constructor = SvgOverlay;
+        SvgOverlay.prototype.onAdd = function () {
+            this.getPanes().overlayLayer.appendChild(this.element);
+        };
+        SvgOverlay.prototype.draw = function () {
+            const offset = this.getProjection().fromCoordToOffset(this.position);
+            this.element.style.left = `${Math.round(offset.x - 27)}px`;
+            this.element.style.top = `${Math.round(offset.y - 27)}px`;
+        };
+        SvgOverlay.prototype.onRemove = function () {
+            this.element.remove();
+        };
+
+        const svgOverlay = new SvgOverlay(new naver.maps.LatLng(35.2846659, 129.0187332));
+        svgOverlay.setMap(map);
+
+        const zoomIn = document.getElementById('zoomIn');
+        const zoomOut = document.getElementById('zoomOut');
+        const zoomLevel = document.getElementById('zoomLevel');
+        function updateControls() {
+            const zoom = map.getZoom();
+            zoomLevel.value = String(zoom);
+            zoomLevel.textContent = String(zoom);
+            zoomIn.disabled = zoom >= MAX_ZOOM;
+            zoomOut.disabled = zoom <= MIN_ZOOM;
+        }
+
+        zoomIn.addEventListener('click', () => {
+            map.setZoom(Math.min(MAX_ZOOM, map.getZoom() + 1), true);
+        });
+
+        zoomOut.addEventListener('click', () => {
+            map.setZoom(Math.max(MIN_ZOOM, map.getZoom() - 1), true);
+        });
+
+        naver.maps.Event.addListener(map, 'zoom_changed', updateControls);
+        naver.maps.Event.addListener(map, 'idle', updateControls);
+        updateControls();
+
+        // Keep direct references available while testing in mobile browsers.
+        window.nativeMarkerZoomTest = { map, marker, svgOverlay };
+    </script>
+</body>
+
+</html>
