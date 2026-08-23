@@ -41,6 +41,13 @@ test('display settings button toggles the layer panel accessibly', () => {
 
 test('mobile pinch relies on the native NAVER overlay transform', () => {
     assert.match(mapSource, /addEventListener\('touchmove', updatePinch/);
+    assert.match(mapSource, /overlayZoomEffect: 'all'/);
+    assert.match(mapSource, /if \(zoomEffectActive\) return;/);
+    assert.match(mapSource, /function onZoomStart\(\) \{[\s\S]*?zoomEffectActive = true;[\s\S]*?cancelAnimationFrame/);
+    assert.match(mapSource, /function onMapIdle\(\) \{[\s\S]*?zoomEffectActive = false;[\s\S]*?queuePositionUpdate\(\)/);
+    assert.match(mapSource, /function transformedPinchOrigin\(touches\)/);
+    assert.match(mapSource, /map\.setOptions\('zoomOrigin', origin\)/);
+    assert.match(mapSource, /screenVectorToStageVector\([\s\S]*?screenX - \(rect\.left/);
     assert.doesNotMatch(mapSource, /canvas\.style\.transform = .*scale/);
     assert.doesNotMatch(styles, /\.cad-map-overlay\.pinching/);
 });
@@ -105,9 +112,11 @@ test('browser page zoom is disabled while map pinch remains app-controlled', () 
 });
 
 test('map view owns a history entry so browser back returns to home', () => {
-    assert.match(appSource, /pushMapStateToHistory\(\);[\s\S]*?window\.BWAMap\?\.initialize\(\)/);
+    assert.match(appSource, /pushMapStateToHistory\(\);[\s\S]*?window\.BWAMap\?\.initialize\(\{ resetView: true \}\)/);
     assert.match(appSource, /window\.addEventListener\('popstate',[\s\S]*?if \(isMapViewActive\)[\s\S]*?closeMapView\(\);[\s\S]*?return;/);
     assert.match(appSource, /window\.history\.pushState\(\{ page: 'map' \}, 'Map', url\)/);
+    assert.match(appSource, /window\.BWAMap\?\.deactivate\?\.\(\)/);
+    assert.match(mapSource, /function resetMapForEntry\(\)[\s\S]*?setMapType\('skyview'\);[\s\S]*?fitToDepot\(\)/);
 });
 
 test('current location uses a circular marker and toggles real-time tracking', () => {

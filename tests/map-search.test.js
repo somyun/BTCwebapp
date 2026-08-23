@@ -41,11 +41,18 @@ test('search indexes every CAD label and supports multiple matches', () => {
 test('selecting a result moves the map and displays a NAVER marker', () => {
     assert.match(mapSource, /new window\.naver\.maps\.Marker\(\{/);
     assert.match(mapSource, /position: \[Number\(position\[0\]\), Number\(position\[1\]\)\]/);
-    assert.match(mapSource, /map\.panTo\(position\)/);
-    assert.match(mapSource, /if \(map\.getZoom\(\) < 20\) map\.setZoom\(20, true\)/);
+    const selection = mapSource.slice(mapSource.indexOf('function selectSearchResult'), mapSource.indexOf('function moveSearchSelection'));
+    assert.match(selection, /map\.setCenter\(position\)/);
+    assert.match(selection, /map\.setZoom\(SEARCH_TARGET_ZOOM, true\)/);
+    assert.ok(selection.indexOf('map.setCenter(position)') < selection.indexOf('map.setZoom(SEARCH_TARGET_ZOOM, true)'));
+    assert.doesNotMatch(selection, /map\.panTo\(position\)/);
     assert.match(mapSource, /button\.addEventListener\('click', \(\) => selectSearchResult\(result, index\)\)/);
     assert.match(mapSource, /content: SEARCH_MARKER_ICON/);
     assert.match(styles, /\.cad-search-pin\s*{[\s\S]*?rotate\(var\(--map-counter-rotation, 0deg\)\)/);
+});
+
+test('the temporary center debug marker is not created during initialization', () => {
+    assert.doesNotMatch(mapSource, /new window\.naver\.maps\.Marker\(\{ map, position: map\.getCenter\(\) \}\)/);
 });
 
 test('selected search results can move to the previous or next match', () => {

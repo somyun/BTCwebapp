@@ -36,7 +36,10 @@ async function createHarness() {
     });
     const elements = {
         mapView: element({ getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 600 }) }),
-        mapZoomStage: element({ setPointerCapture() {} }), naverMap: element(),
+        mapZoomStage: element({
+            setPointerCapture() {},
+            getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 600 })
+        }), naverMap: element(),
         cadOverlay: element({
             querySelectorAll: (selector) => selector === '.cad-map-label' ? [renderedLabel] : [],
             getBoundingClientRect: () => ({ left: 0, top: 0 })
@@ -63,15 +66,20 @@ async function createHarness() {
     class FakeMap {
         constructor(_surface, options) {
             this.zoom = options.zoom; this.center = options.center; this.draggable = true; this.sizeCalls = 0;
+            this.options = { ...options }; this.fitBoundsCalls = 0; this.stopCalls = 0;
         }
         setMapTypeId(type) { this.mapTypeId = type; }
-        fitBounds() {}
+        fitBounds(bounds, padding) { this.fitBoundsCalls += 1; this.lastBounds = bounds; this.lastPadding = padding; }
         setZoom(zoom) { this.zoom = zoom; mapEvents.zoom_changed?.(); }
         getZoom() { return this.zoom; }
         getCenter() { return this.center; }
         setCenter(center) { this.center = center; mapEvents.center_changed?.(); }
         panTo(center) { this.setCenter(center); }
-        setOptions(key, value) { if (key === 'draggable') this.draggable = value; }
+        setOptions(key, value) {
+            this.options[key] = value;
+            if (key === 'draggable') this.draggable = value;
+        }
+        stop() { this.stopCalls += 1; }
         setSize(size) { this.sizeCalls += 1; this.lastSize = size; }
         getPanes() { return { overlayLayer: overlayPane }; }
         getProjection() {
@@ -103,7 +111,7 @@ async function createHarness() {
             MapTypeId: { SATELLITE: 'satellite', NORMAL: 'normal' },
             Event: { addListener: (_map, name, handler) => { mapEvents[name] = handler; } }
         } },
-        requestAnimationFrame: (callback) => { callback(); return 1; }, setTimeout, clearTimeout,
+        requestAnimationFrame: (callback) => { callback(); return 0; }, cancelAnimationFrame() {}, setTimeout, clearTimeout,
         addEventListener: (name, handler) => { windowListeners[name] = handler; }, navigator: {},
         innerWidth: 600, innerHeight: 1000,
         screen: { orientation: { angle: 0, addEventListener() {} } }
@@ -205,6 +213,26 @@ test('pinching leaves CAD preview transforms to the native NAVER overlay pane', 
     assert.doesNotMatch(elements.mapZoomStage.style.transform, /scale/);
 });
 
+test('landscape pinch converts its visible midpoint into the rotated map coordinate', async () => {
+    const { elements, window, windowListeners, getMap } = await createHarness();
+    window.innerWidth = 1000; window.innerHeight = 600; window.screen.orientation.angle = 90;
+    elements.mapZoomStage.clientWidth = 600;
+    elements.mapZoomStage.clientHeight = 1000;
+    await windowListeners.resize();
+
+    elements.naverMap.listeners.touchstart({
+        touches: [{ clientX: 200, clientY: 200 }, { clientX: 300, clientY: 200 }]
+    });
+    const origin = getMap().options.zoomOrigin;
+    assert.ok(origin);
+    assert.ok(Math.abs(origin.lat - 35.05) < 1e-9);
+    assert.ok(Math.abs(origin.lng - 128.9) < 1e-9);
+
+    elements.naverMap.listeners.touchend({ touches: [{ clientX: 200, clientY: 200 }] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(getMap().options.zoomOrigin, null);
+});
+
 test('hidden map does not collapse to 1px and restores its visible container size on reentry', async () => {
     const { elements, getMap, window } = await createHarness();
     const sizeCalls = getMap().sizeCalls;
@@ -215,4 +243,18 @@ test('hidden map does not collapse to 1px and restores its visible container siz
     window.BWAMap.relayout();
     assert.equal(getMap().lastSize.width, 600);
     assert.equal(getMap().lastSize.height, 1000);
+});
+
+test('map reentry resets the transient state and fits the default depot bounds again', async () => {
+    const { getMap, window } = await createHarness();
+    const initialFitCount = getMap().fitBoundsCalls;
+    getMap().setMapTypeId('normal');
+    getMap().setZoom(21);
+
+    await window.BWAMap.initialize({ resetView: true });
+
+    assert.equal(getMap().fitBoundsCalls, initialFitCount + 1);
+    assert.equal(getMap().mapTypeId, 'satellite');
+    assert.ok(getMap().stopCalls >= 1);
+    assert.equal(getMap().options.zoomOrigin, null);
 });

@@ -16,6 +16,7 @@
     ]);
     const OVERLAY_PADDING_RATIO = 0.015;
     const SEARCH_RESULT_LIMIT = 100;
+    const SEARCH_TARGET_ZOOM = 20;
     const LABEL_FONT_SIZES = Object.freeze({ small: 14, medium: 17, large: 20 });
     const SEARCH_MARKER_ICON = '<span class="cad-search-pin" aria-hidden="true"><svg viewBox="0 0 30 38"><path d="M15 1.5C7.55 1.5 1.5 7.55 1.5 15c0 9.7 13.5 21.5 13.5 21.5S28.5 24.7 28.5 15C28.5 7.55 22.45 1.5 15 1.5Z"/><circle cx="15" cy="15" r="5.2"/></svg></span>';
     const CURRENT_POSITION_ICON = '<span class="current-position-marker" aria-hidden="true"></span>';
@@ -37,6 +38,7 @@
     let currentMapType = 'skyview';
     let positionFrame = 0;
     let idleTimer = 0;
+    let zoomEffectActive = false;
     let rasterDirty = true;
     let renderedZoom = null;
     let renderRevision = 0;
@@ -131,6 +133,33 @@
             x: Math.abs(x) < 1e-9 ? 0 : x,
             y: Math.abs(y) < 1e-9 ? 0 : y
         };
+    }
+
+    function transformedPinchOrigin(touches) {
+        if (!map || !customTransformActive() || !touches || touches.length < 2) return null;
+        const stage = getElement('mapZoomStage');
+        if (!stage) return null;
+        const rect = stage.getBoundingClientRect();
+        const screenX = (Number(touches[0].clientX) + Number(touches[1].clientX)) / 2;
+        const screenY = (Number(touches[0].clientY) + Number(touches[1].clientY)) / 2;
+        const delta = screenVectorToStageVector(
+            screenX - (rect.left + (rect.width / 2)),
+            screenY - (rect.top + (rect.height / 2))
+        );
+        const stagePoint = new window.naver.maps.Point(
+            (stage.clientWidth / 2) + delta.x,
+            (stage.clientHeight / 2) + delta.y
+        );
+        return map.getProjection().fromOffsetToCoord(stagePoint);
+    }
+
+    function syncTransformedPinchOrigin(touches) {
+        const origin = transformedPinchOrigin(touches);
+        if (origin) map.setOptions('zoomOrigin', origin);
+    }
+
+    function clearTransformedPinchOrigin() {
+        map?.setOptions?.('zoomOrigin', null);
     }
 
     function normalizedScreenAngle() {
@@ -391,8 +420,11 @@
                 anchor: new window.naver.maps.Point(15, 38)
             }
         });
-        if (map.getZoom() < 20) map.setZoom(20, true);
-        map.panTo(position);
+        // Animated zooms use the current map center as their origin. Move to the
+        // result first so the requested CAD label stays under the marker while
+        // the zoom animation runs.
+        map.setCenter(position);
+        if (map.getZoom() < SEARCH_TARGET_ZOOM) map.setZoom(SEARCH_TARGET_ZOOM, true);
         getElement('mapSearchResults').hidden = true;
         updateSearchNavigation();
     }
@@ -557,6 +589,33 @@
             new window.naver.maps.LatLng(north, east)
         );
         map.fitBounds(bounds, 42);
+    }
+
+    function resetMapForEntry() {
+        if (!map || !manifest) return;
+        map.stop?.();
+        clearTransformedPinchOrigin();
+        zoomEffectActive = false;
+        transformedPanGesture = null;
+        getElement('mapZoomStage')?.classList.remove('dragging');
+
+        stopLocationTracking(false);
+        currentPositionMarker?.setMap?.(null);
+        currentPositionAccuracy?.setMap?.(null);
+        setLocationStatus('');
+
+        searchMarker?.setMap?.(null);
+        searchMarker = null;
+        closeTextSearch();
+
+        const layerPanel = getElement('cadLayerPanel');
+        const settingsButton = getElement('displaySettingsBtn');
+        if (layerPanel) layerPanel.hidden = true;
+        settingsButton?.classList.remove('active');
+        settingsButton?.setAttribute('aria-expanded', 'false');
+
+        setMapType('skyview');
+        fitToDepot();
     }
 
     function setLocationStatus(text, tone = '') {
@@ -758,6 +817,10 @@
     }
 
     function queuePositionUpdate() {
+        // NAVER Maps scales the overlay pane itself during animated zooms.
+        // Reprojecting the SVG at the same time applies the zoom twice and can
+        // move the drawing outside the viewport until the idle redraw.
+        if (zoomEffectActive) return;
         if (positionFrame) return;
         positionFrame = window.requestAnimationFrame(() => {
             positionFrame = 0;
@@ -767,6 +830,7 @@
 
     function beginPinch(event) {
         if (event.touches.length > 1) {
+            syncTransformedPinchOrigin(event.touches);
             transformedPanGesture = null;
             getElement('mapZoomStage')?.classList.remove('dragging');
             return;
@@ -782,6 +846,10 @@
     }
 
     function updatePinch(event) {
+        if (event.touches.length > 1) {
+            syncTransformedPinchOrigin(event.touches);
+            return;
+        }
         if (transformedPanGesture && event.touches.length === 1 && customTransformActive()) {
             const touch = event.touches[0];
             panTransformedMap(
@@ -794,6 +862,9 @@
     }
 
     function endPinch(event) {
+        if (event.touches.length < 2) {
+            window.setTimeout(clearTransformedPinchOrigin, 0);
+        }
         if (transformedPanGesture && event.touches.length === 0) {
             transformedPanGesture = null;
             getElement('mapZoomStage')?.classList.remove('dragging');
@@ -1021,12 +1092,17 @@
 
     function onZoomStart() {
         window.clearTimeout(idleTimer);
+        zoomEffectActive = true;
+        if (positionFrame) {
+            window.cancelAnimationFrame?.(positionFrame);
+            positionFrame = 0;
+        }
         renderRevision += 1;
         rasterDirty = true;
-        queuePositionUpdate();
     }
 
     function onMapIdle() {
+        zoomEffectActive = false;
         queuePositionUpdate();
         window.clearTimeout(idleTimer);
         idleTimer = window.setTimeout(async () => {
@@ -1168,7 +1244,8 @@
         stage?.addEventListener('pointercancel', endTransformedPointerPan);
     }
 
-    async function initialize() {
+    async function initialize(options = {}) {
+        const resetView = Boolean(options?.resetView);
         const loading = getElement('mapLoading');
 
         try {
@@ -1189,6 +1266,7 @@
                     mapTypeId: window.naver.maps.MapTypeId.SATELLITE,
                     mapTypeControl: false,
                     scaleControl: true,
+                    overlayZoomEffect: 'all',
                     zoomControl: false
                 });
                 bindMapEvents();
@@ -1204,6 +1282,8 @@
             if (!initialBoundsApplied) {
                 fitToDepot();
                 initialBoundsApplied = true;
+            } else if (resetView) {
+                resetMapForEntry();
             } else {
                 queuePositionUpdate();
             }
@@ -1233,6 +1313,14 @@
         relayout() {
             if (!map) return;
             scheduleResponsiveRelayout();
+        },
+        deactivate() {
+            if (!map) return;
+            map.stop?.();
+            clearTransformedPinchOrigin();
+            transformedPanGesture = null;
+            getElement('mapZoomStage')?.classList.remove('dragging');
+            stopLocationTracking(false);
         }
     };
 }());

@@ -201,7 +201,7 @@ async function openMapView() {
     closeMenu();
     updateHomeButtonVisibility();
     pushMapStateToHistory();
-    window.BWAMap?.initialize();
+    window.BWAMap?.initialize({ resetView: true });
 }
 
 function closeMapView() {
@@ -209,6 +209,7 @@ function closeMapView() {
     const mapView = document.getElementById('mapView');
     const headerTitle = document.querySelector('.header-title');
 
+    window.BWAMap?.deactivate?.();
     isMapViewActive = false;
     mapView?.classList.add('view-hidden');
     homeView?.classList.remove('view-hidden');

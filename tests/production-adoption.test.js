@@ -58,7 +58,7 @@ test('legacy notification devices can be imported and silently claimed by the sa
 
 test('production cache versions force the notification migration code and worker to refresh', () => {
     assert.match(read('index.html'), /production-read\.js\?v=daily-measurement-cache-1/);
-    assert.match(read('index.html'), /script\.js\?v=map-history-1/);
+    assert.match(read('index.html'), /script\.js\?v=map-history-2/);
     assert.match(read('notification-settings.html'), /notification-settings\.js\?v=production-notifications-2/);
     assert.match(read('script.js'), /firebase-messaging-sw\.js\?v=production-notifications-2/);
 });
@@ -120,8 +120,13 @@ test('test-only environment values do not leak into adopted production code', ()
 
 test('the existing public CAD loader remains in place without private Storage adoption', () => {
     const index = read('index.html');
-    assert.match(index, /<script src="map\.js\?v=hopo-cad-naver-6"><\/script>/);
+    assert.match(index, /<script src="map\.js\?v=hopo-cad-naver-9"><\/script>/);
     assert.doesNotMatch(index, /cad-storage\.js|firebasestorage\.googleapis\.com|storage\.googleapis\.com/);
+});
+
+test('the app cache-busts the map reentry history behavior', () => {
+    const index = read('index.html');
+    assert.match(index, /<script src="script\.js\?v=map-history-2"><\/script>/);
 });
 
 test('CSP-safe controls use script listeners instead of inline handlers', () => {
