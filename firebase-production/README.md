@@ -36,16 +36,10 @@ legacy GAS notification trigger is disabled.
 
 ## Verification
 
-From the repository root:
-
-```powershell
-node --test tests\*.test.js
-```
-
 From `firebase-production/functions`:
 
 ```powershell
-npm.cmd run verify
+npm.cmd run lint
 ```
 
 ## Deployment
@@ -60,5 +54,4 @@ firebase deploy --only "firestore:rules,firestore:indexes,functions" `
 ```
 
 Opening the submission gate for a real form and enabling scheduled notification
-dispatch are operational changes that require the approvals documented in
-`docs/PRODUCTION_TEST_CODE_ADOPTION_PLAN.md`.
+dispatch are separate operational changes and require explicit production approval.

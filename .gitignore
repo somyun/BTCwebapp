@@ -4,10 +4,6 @@
 # Contains an embedded Firebase service-account private key.
 # Keep it locally for the existing Apps Script project, but never commit it.
 apps-script/firebase_key.js
-apps-script-test/firebase_key.js
-
-# Separate GitHub Pages testbed; published from its own repository.
-testbed/
 
 # Local CAD conversion and validation workspace. Only cad-data/ is deployable.
 .analysis/
